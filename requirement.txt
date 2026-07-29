@@ -1,0 +1,26 @@
+# Core Django Framework
+Django>=5.0,<6.0
+djangorestframework>=3.15.0
+django-cors-headers>=4.3.0
+
+# Spotify API & Network
+spotipy>=2.23.0
+requests>=2.31.0
+
+# Asynchronous Tasks & Caching (Celery + Redis)
+celery>=5.3.6
+redis>=5.0.1
+django-celery-beat>=2.6.0
+
+# Database
+psycopg2-binary>=2.9.9
+dj-database-url>=2.1.0
+
+# AI & Data Analytics Engine
+google-genai>=0.1.1
+scikit-learn>=1.4.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Utilities & Config
+python-dotenv>=1.0.1
