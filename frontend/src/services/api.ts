@@ -24,7 +24,7 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
   if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.Authorization = `Token ${token}`;
   }
   return config;
 });
@@ -234,11 +234,16 @@ export const api = {
   },
 
   async getCurrentUser(): Promise<UserProfile | null> {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return null;
+    }
     try {
       const res = await apiClient.get('/api/users/me/');
       return res.data.user || res.data;
     } catch {
-      return MOCK_USER;
+      localStorage.removeItem('access_token');
+      return null;
     }
   },
 
@@ -251,13 +256,9 @@ export const api = {
   },
 
   // Tracker
-  async triggerSync(): Promise<{ scrobbled_count: number }> {
-    try {
-      const res = await apiClient.post('/api/tracker/sync/');
-      return res.data;
-    } catch {
-      return { scrobbled_count: 5 };
-    }
+  async triggerSync(): Promise<{ scrobbled_count: number; message?: string }> {
+    const res = await apiClient.post('/api/tracker/sync/');
+    return res.data;
   },
 
   // Analytics

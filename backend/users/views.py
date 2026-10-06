@@ -80,14 +80,18 @@ class SpotifyCallbackView(APIView):
 
             login(request, user)
 
-            # Neu request den tu trinh duyet thi chuyen huong ve Frontend
+            from rest_framework.authtoken.models import Token
+            token, _ = Token.objects.get_or_create(user=user)
+
+            # Neu request den tu trinh duyet thi chuyen huong ve Frontend kem Auth Token
             redirect_to_frontend = request.GET.get('redirect', 'true').lower() == 'true'
             if 'text/html' in request.headers.get('Accept', '') and redirect_to_frontend:
-                return redirect("http://localhost:5173/?auth_success=true")
+                return redirect(f"http://localhost:5173/?token={token.key}&auth_success=true")
 
             serializer = SpotifyProfileSerializer(profile)
             return Response({
                 "message": "Xac thuc Spotify thanh cong.",
+                "token": token.key,
                 "user": serializer.data
             }, status=status.HTTP_200_OK)
 
@@ -114,9 +118,14 @@ class CurrentUserView(APIView):
 
 class LogoutView(APIView):
     """Dang xuat va xoa phien lam viec."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request):
+        if request.user and request.user.is_authenticated and hasattr(request.user, 'auth_token'):
+            try:
+                request.user.auth_token.delete()
+            except Exception:
+                pass
         logout(request)
         return Response({"message": "Dang xuat thanh cong."}, status=status.HTTP_200_OK)
 
