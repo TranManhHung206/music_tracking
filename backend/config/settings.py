@@ -149,7 +149,7 @@ FERNET_SECRET_KEY = os.getenv('FERNET_SECRET_KEY', '')
 
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID', '')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET', '')
-SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://localhost:8000/api/users/spotify/callback/')
+SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8000/api/users/spotify/callback/')
 
 # AI Providers
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
