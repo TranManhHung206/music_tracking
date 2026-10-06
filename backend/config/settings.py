@@ -143,15 +143,53 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = True # Hoặc cấu hình CORS_ALLOWED_ORIGINS cụ thể cho Frontend local
 
 # ==========================================
-# EXTERNAL API CONFIGURATION (SPOTIFY & GEMINI)
+# EXTERNAL API & ENCRYPTION CONFIGURATION
 # ==========================================
+FERNET_SECRET_KEY = os.getenv('FERNET_SECRET_KEY', '')
+
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID', '')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET', '')
 SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://localhost:8000/api/users/spotify/callback/')
 
+# AI Providers
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'groq')
+AI_MODEL_GROQ = os.getenv('AI_MODEL_GROQ', 'openai/gpt-oss-120b')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 # Redis / Celery
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    'scrobble-active-users-every-15m': {
+        'task': 'tracker.tasks.scheduled_scrobble_all_users',
+        'schedule': crontab(minute='*/15'),
+    },
+}
+
+# Cấu hình Caching (LocMem mặc định cho môi trường dev, Redis khi bật cờ USE_REDIS_CACHE)
+USE_REDIS_CACHE = os.getenv('USE_REDIS_CACHE', 'False').lower() in ('true', '1')
+if USE_REDIS_CACHE:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'TIMEOUT': 1800,
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'music-analytics-cache',
+            'TIMEOUT': 1800,
+        }
+    }
 
