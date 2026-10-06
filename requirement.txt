@@ -17,6 +17,7 @@ psycopg2-binary>=2.9.9
 dj-database-url>=2.1.0
 
 # AI & Data Analytics Engine
+groq>=0.11.0
 google-genai>=0.1.1
 scikit-learn>=1.4.0
 pandas>=2.2.0
@@ -24,3 +25,4 @@ numpy>=1.26.0
 
 # Utilities & Config
 python-dotenv>=1.0.1
+cryptography>=42.0.0
