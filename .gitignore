@@ -51,4 +51,7 @@ yarn-debug.log*
 Thumbs.db
 
 # 7. agents
-agents/
+.agents/
+
+# 8. md files for owner
+owner_md/
