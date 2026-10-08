@@ -8,6 +8,7 @@ import type {
   RadarData,
   HeatmapData,
   BarChartRaceData,
+  GenreDistributionData,
 } from '../types/analytics';
 import type { AIMusicPersona, RecommendationResult } from '../types/ai';
 
@@ -221,6 +222,18 @@ export const MOCK_PERSONA: AIMusicPersona = {
   created_at: new Date().toISOString(),
 };
 
+export const MOCK_GENRES: GenreDistributionData = {
+  genres: [
+    { name: 'EDM / Electronic', plays: 185, percentage: 43.2, color: '#1DB954' },
+    { name: 'Global Pop', plays: 120, percentage: 28.0, color: '#06B6D4' },
+    { name: 'V-Pop', plays: 68, percentage: 15.9, color: '#EC4899' },
+    { name: 'US-UK / Pop', plays: 35, percentage: 8.2, color: '#3B82F6' },
+    { name: 'Acoustic / Lo-Fi', plays: 20, percentage: 4.7, color: '#A855F7' },
+  ],
+  total_plays: 428,
+  top_genre: 'EDM / Electronic',
+};
+
 // API Services voi Graceful Fallback sang Mock Data
 export const api = {
   // Auth
@@ -313,6 +326,15 @@ export const api = {
       return res.data;
     } catch {
       return MOCK_RACE;
+    }
+  },
+
+  async getGenreDistribution(range: TimeRange = '30d'): Promise<GenreDistributionData> {
+    try {
+      const res = await apiClient.get(`/api/analytics/genres/?time_range=${range}`);
+      return res.data;
+    } catch {
+      return MOCK_GENRES;
     }
   },
 

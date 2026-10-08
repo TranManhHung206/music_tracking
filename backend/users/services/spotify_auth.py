@@ -6,6 +6,8 @@ Quan ly luong Authorization Code Flow, hoan doi token, refresh token va goi Spot
 import base64
 import secrets
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
@@ -19,6 +21,24 @@ REQUIRED_SCOPES = [
     "user-read-private",
     "user-read-email",
 ]
+
+def get_spotify_session() -> requests.Session:
+    """Tao session kem User-Agent chuan trinh duyet va co che retry toi uu cho ket noi quoc te."""
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    })
+    retry_strategy = Retry(
+        total=0,
+        backoff_factor=0.3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 def get_spotify_credentials() -> tuple[str, str, str]:
     """Lay va kiem tra thong tin xac thuc Spotify App tu settings."""
@@ -66,7 +86,8 @@ def exchange_code_for_tokens(code: str) -> dict:
         "code": code,
         "redirect_uri": redirect_uri,
     }
-    response = requests.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=10)
+    session = get_spotify_session()
+    response = session.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=(10, 20))
     if response.status_code != 200:
         raise ValueError(f"Spotify token exchange failed ({response.status_code}): {response.text}")
     return response.json()
@@ -74,7 +95,8 @@ def exchange_code_for_tokens(code: str) -> dict:
 def fetch_spotify_profile(access_token: str) -> dict:
     """Lay thong tin profile nguoi dung tu Spotify API /me."""
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(SPOTIFY_ME_URL, headers=headers, timeout=10)
+    session = get_spotify_session()
+    response = session.get(SPOTIFY_ME_URL, headers=headers, timeout=(2, 3))
     if response.status_code != 200:
         raise ValueError(f"Spotify profile fetch failed ({response.status_code}): {response.text}")
     return response.json()
@@ -91,7 +113,8 @@ def refresh_spotify_tokens(profile) -> str:
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     }
-    response = requests.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=10)
+    session = get_spotify_session()
+    response = session.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=(10, 20))
     if response.status_code != 200:
         raise ValueError(f"Spotify refresh token failed ({response.status_code}): {response.text}")
 

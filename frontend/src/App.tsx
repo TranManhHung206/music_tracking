@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Headphones,
   Clock,
@@ -17,6 +17,7 @@ import type {
   RadarData,
   HeatmapData,
   BarChartRaceData,
+  GenreDistributionData,
 } from './types/analytics';
 import type { AIMusicPersona, RecommendationResult } from './types/ai';
 
@@ -28,6 +29,7 @@ import {
   MOCK_RADAR,
   MOCK_HEATMAP,
   MOCK_RACE,
+  MOCK_GENRES,
   MOCK_PERSONA,
 } from './services/api';
 
@@ -39,6 +41,7 @@ import { TimeRangeSelector } from './components/ui/TimeRangeSelector';
 
 import { RadarChartComponent } from './components/charts/RadarChartComponent';
 import { ListeningHeatmap } from './components/charts/ListeningHeatmap';
+import { GenreDistribution } from './components/charts/GenreDistribution';
 import { BarChartRace } from './components/charts/BarChartRace';
 
 import { PersonaCard } from './components/cards/PersonaCard';
@@ -53,6 +56,7 @@ export function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const hasInitializedRef = useRef(false);
 
   // Toast Notification State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -69,8 +73,16 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Time Filter State
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  // Time Filter State - Luu tru va phuc hoi tu localStorage
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    const saved = localStorage.getItem('user_time_range');
+    return (saved === '7d' || saved === '30d' || saved === '1y') ? (saved as TimeRange) : '30d';
+  });
+
+  const handleTimeRangeChange = (newRange: TimeRange) => {
+    setTimeRange(newRange);
+    localStorage.setItem('user_time_range', newRange);
+  };
 
   // Analytics Data State
   const [summary, setSummary] = useState<SummaryStats>(MOCK_SUMMARY);
@@ -79,6 +91,7 @@ export function App() {
   const [radarData, setRadarData] = useState<RadarData>(MOCK_RADAR);
   const [heatmapData, setHeatmapData] = useState<HeatmapData>(MOCK_HEATMAP);
   const [raceData, setRaceData] = useState<BarChartRaceData>(MOCK_RACE);
+  const [genreData, setGenreData] = useState<GenreDistributionData>(MOCK_GENRES);
 
   // AI Persona & Recommendations State
   const [persona, setPersona] = useState<AIMusicPersona>(MOCK_PERSONA);
@@ -91,20 +104,57 @@ export function App() {
   const [recData, setRecData] = useState<RecommendationResult | null>(null);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
-  // 1. Kiem tra OAuth Callback & Token khi ung dung khoi tao
+  // 1. Fetch User & Analytics Data tu Backend (khi da dang nhap)
+  const refreshAllData = useCallback(async (range: TimeRange) => {
+    if (!user) return;
+    try {
+      const [sum, tracks, artists, radar, heatmap, race, genres, p] = await Promise.all([
+        api.getSummary(range),
+        api.getTopTracks(range, 5),
+        api.getTopArtists(range, 5),
+        api.getRadar(range),
+        api.getHeatmap(range),
+        api.getBarChartRace('1y'),
+        api.getGenreDistribution(range),
+        api.getLatestPersona('monthly'),
+      ]);
+
+      setSummary(sum);
+      setTopTracks(tracks);
+      setTopArtists(artists);
+      setRadarData(radar);
+      setHeatmapData(heatmap);
+      setRaceData(race);
+      setGenreData(genres);
+      setPersona(p);
+    } catch {
+      // Graceful fallback da xu ly trong api client
+    }
+  }, [user]);
+
+  // 2. Kiem tra OAuth Callback & Token khi ung dung khoi tao, dong thoi tu dong sync 1 lan duy nhat
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     const authSuccess = params.get('auth_success');
+    const authError = params.get('auth_error');
 
-    if (token) {
+    if (authError) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setTimeout(() => {
+        addToast('error', decodeURIComponent(authError));
+      }, 0);
+    } else if (token) {
       localStorage.setItem('access_token', token);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (authSuccess) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    // Kiem tra phien lam viec hien tai
+    // Kiem tra phien lam viec hien tai - KHONG goi triggerSync o day de tranh block spinner
     api.getCurrentUser()
       .then((currentUser) => {
         if (currentUser) {
@@ -123,45 +173,41 @@ export function App() {
       });
   }, [addToast]);
 
-  // 2. Fetch User & Analytics Data tu Backend (khi da dang nhap)
-  const refreshAllData = useCallback(async (range: TimeRange) => {
-    if (!user) return;
-    try {
-      const [sum, tracks, artists, radar, heatmap, race, p] = await Promise.all([
-        api.getSummary(range),
-        api.getTopTracks(range, 5),
-        api.getTopArtists(range, 5),
-        api.getRadar(range),
-        api.getHeatmap(range),
-        api.getBarChartRace('1y'),
-        api.getLatestPersona('monthly'),
-      ]);
+  // Auto-sync Spotify 1 lan duy nhat sau khi xac nhan user (chay doc lap, khong block UI)
+  const hasAutoSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!user || hasAutoSyncedRef.current) return;
+    hasAutoSyncedRef.current = true;
 
-      setSummary(sum);
-      setTopTracks(tracks);
-      setTopArtists(artists);
-      setRadarData(radar);
-      setHeatmapData(heatmap);
-      setRaceData(race);
-      setPersona(p);
-    } catch {
-      // Graceful fallback da xu ly trong api client
-    }
-  }, [user]);
+    const runAutoSync = async () => {
+      try {
+        const syncRes = await api.triggerSync();
+        if (syncRes.scrobbled_count > 0) {
+          addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} lượt nghe mới!`);
+          refreshAllData(timeRange);
+        }
+      } catch {
+        // Bo qua loi sync ngam
+      }
+    };
+    runAutoSync();
+  }, [user, addToast, refreshAllData, timeRange]);
 
+  // 3. Tu dong tai du lieu khi co user va bo loc thoi gian thay doi
   useEffect(() => {
     if (!user) return;
     let isCancelled = false;
 
-    const loadData = async () => {
+    const fetchData = async () => {
       try {
-        const [sum, tracks, artists, radar, heatmap, race, p] = await Promise.all([
+        const [sum, tracks, artists, radar, heatmap, race, genres, p] = await Promise.all([
           api.getSummary(timeRange),
           api.getTopTracks(timeRange, 5),
           api.getTopArtists(timeRange, 5),
           api.getRadar(timeRange),
           api.getHeatmap(timeRange),
           api.getBarChartRace('1y'),
+          api.getGenreDistribution(timeRange),
           api.getLatestPersona('monthly'),
         ]);
 
@@ -172,6 +218,7 @@ export function App() {
           setRadarData(radar);
           setHeatmapData(heatmap);
           setRaceData(race);
+          setGenreData(genres);
           setPersona(p);
         }
       } catch {
@@ -179,11 +226,29 @@ export function App() {
       }
     };
 
-    loadData();
+    fetchData();
     return () => {
       isCancelled = true;
     };
   }, [user, timeRange]);
+
+  // 3. Periodic background auto-sync moi 3 phut khi tab dang mo
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      try {
+        const syncRes = await api.triggerSync();
+        if (syncRes.scrobbled_count > 0) {
+          addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} bài hát mới từ Spotify.`);
+          refreshAllData(timeRange);
+        }
+      } catch {
+        // Bo qua loi polling ngam
+      }
+    }, 180000);
+
+    return () => clearInterval(interval);
+  }, [user, timeRange, refreshAllData, addToast]);
 
   // Handlers
   const handleLogin = async () => {
@@ -220,6 +285,7 @@ export function App() {
     setRadarData(MOCK_RADAR);
     setHeatmapData(MOCK_HEATMAP);
     setRaceData(MOCK_RACE);
+    setGenreData(MOCK_GENRES);
     setPersona(MOCK_PERSONA);
     addToast('info', 'Đã bật Chế độ Xem thử (Demo) với dữ liệu mẫu.');
   };
@@ -241,8 +307,14 @@ export function App() {
       addToast('success', `Đồng bộ thành công! Đã ghi nhận ${count} bài hát mới từ Spotify.`);
       await refreshAllData(timeRange);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi kết nối';
-      addToast('error', `Đồng bộ thất bại: ${msg}`);
+      const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
+      if (axiosErr?.response?.status === 429) {
+        const rateLimitMsg = axiosErr.response.data?.error || 'Spotify đang tạm giới hạn tần suất yêu cầu (Rate Limit). Vui lòng thử lại sau.';
+        addToast('warning', rateLimitMsg);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Lỗi kết nối';
+        addToast('error', `Đồng bộ thất bại: ${msg}`);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -349,7 +421,7 @@ export function App() {
               <span className="text-xs text-slate-400 font-medium hidden md:inline">
                 Khung thời gian:
               </span>
-              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+              <TimeRangeSelector value={timeRange} onChange={handleTimeRangeChange} />
             </div>
           </div>
 
@@ -401,7 +473,12 @@ export function App() {
             </div>
           </section>
 
-          {/* 4. Top Charts: Tracks & Artists */}
+          {/* 4. Thể Loại Âm Nhạc Chủ Đạo (Top Genres Stream Distribution) */}
+          <section>
+            <GenreDistribution data={genreData} />
+          </section>
+
+          {/* 5. Top Charts: Tracks & Artists */}
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <TopTracksList tracks={topTracks} onFindSimilar={handleFindSimilarSongs} />
             <TopArtistsList artists={topArtists} />
@@ -433,6 +510,7 @@ export function App() {
         personaTitle={persona.persona_title}
         tagline={persona.tagline}
         topArtists={topArtists.map((a) => a.name)}
+        topGenres={genreData.genres.map((g) => g.name)}
         period={`Kỳ ${timeRange}`}
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}

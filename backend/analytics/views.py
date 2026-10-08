@@ -162,3 +162,23 @@ class BarChartRaceAnalyticsView(APIView):
 
         result = get_or_set_cached_metric(cache_key, ttl, compute)
         return Response(result, status=status.HTTP_200_OK)
+
+class GenreDistributionView(APIView):
+    """API lay ti le phan bo the loai am nhac (EDM, US-UK, V-Pop, v.v.)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        time_range = request.query_params.get('time_range', '30d')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
+        cache_key = build_analytics_cache_key(request.user.id, 'genres', range_key)
+        ttl = get_cache_ttl_for_range(range_key)
+
+        def compute():
+            from .services.calculations import get_genre_distribution
+            return get_genre_distribution(request.user, start_dt, end_dt)
+
+        result = get_or_set_cached_metric(cache_key, ttl, compute)
+        return Response(result, status=status.HTTP_200_OK)

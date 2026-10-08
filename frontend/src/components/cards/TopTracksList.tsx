@@ -21,8 +21,13 @@ export const TopTracksList: React.FC<TopTracksListProps> = ({ tracks, onFindSimi
         </div>
       </div>
 
-      <div className="space-y-3">
-        {tracks.map((track, idx) => (
+      {tracks.length === 0 ? (
+        <div className="py-8 text-center text-slate-500 text-xs">
+          Chưa có bài hát nào được ghi nhận trong kỳ này.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tracks.map((track, idx) => (
           <div
             key={track.spotify_id || idx}
             className="flex items-center justify-between p-3 rounded-xl bg-[#0B0F17]/50 border border-[#1E293B]/60 hover:border-[#1DB954]/40 transition-all group"
@@ -72,7 +77,8 @@ export const TopTracksList: React.FC<TopTracksListProps> = ({ tracks, onFindSimi
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -77,6 +77,7 @@ def get_top_tracks(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
 
 def get_top_artists(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
     """Lay danh sach Top nghe si nghe nhieu nhat trong ky."""
+    from tracker.models import Album
     qs = (
         ListeningHistory.objects.filter(
             user=user,
@@ -92,15 +93,97 @@ def get_top_artists(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
         .order_by('-play_count')[:limit]
     )
 
-    return [
-        {
-            "spotify_id": item['artist_id'],
+    results = []
+    for item in qs:
+        img_url = item['image_url']
+        art_id = item['artist_id']
+        # Neu chua co anh nghe si, lay anh album gan nhat cua nghe si do
+        if not img_url:
+            alb = Album.objects.filter(artists__spotify_id=art_id, image_url__isnull=False).first()
+            if alb:
+                img_url = alb.image_url
+            else:
+                trk = Track.objects.filter(artists__spotify_id=art_id, album__image_url__isnull=False).first()
+                if trk and trk.album:
+                    img_url = trk.album.image_url
+
+        results.append({
+            "spotify_id": art_id,
             "name": item['artist_name'],
-            "image_url": item['image_url'],
+            "image_url": img_url,
             "play_count": item['play_count'],
-        }
-        for item in qs
-    ]
+        })
+    return results
+
+def classify_artist_genres(artist_name: str, track_name: str = "") -> str:
+    """Phan loai the loai am nhac dua tren ten nghe si va tieu de bai hat."""
+    name_lower = artist_name.lower()
+    title_lower = track_name.lower()
+
+    edm_artists = ["thefatrat", "alan walker", "lost sky", "arc north", "mountkid", "tokyo machine", "k-391", "ahrix", "robin hustin", "tobimorrow", "jex", "marshmello", "martin garrix", "avicii", "skrillex", "illenium", "ellis"]
+    vpop_artists = ["sơn tùng", "đen", "vũ", "vũ cát tường", "amee", "hoàng thùy linh", "grey d", "mono", "soobin", "min", "hieuthuhai", "mck", "tlinh"]
+    usuk_artists = ["charlie puth", "dua lipa", "the weeknd", "taylor swift", "ariana grande", "bruno mars", "billie eilish", "dhruv", "salem ilese", "justin bieber", "ed sheeran"]
+    kpop_artists = ["bts", "blackpink", "newjeans", "twice", "iu", "stray kids", "aespa"]
+
+    if any(a in name_lower for a in edm_artists) or any(k in title_lower for k in ["remix", "radio edit", "dubstep", "bass"]):
+        return "EDM / Electronic"
+    if any(a in name_lower for a in vpop_artists):
+        return "V-Pop"
+    if any(a in name_lower for a in usuk_artists):
+        return "US-UK / Pop"
+    if any(a in name_lower for a in kpop_artists):
+        return "K-Pop"
+    if any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"]):
+        return "Acoustic / Lo-Fi"
+    return "Global Pop"
+
+def get_genre_distribution(user, start_dt, end_dt) -> dict:
+    """Phan tich ti le cac the loai am nhac trong lich su nghe cua nguoi dung."""
+    history = (
+        ListeningHistory.objects.filter(user=user, played_at__range=(start_dt, end_dt))
+        .select_related('track')
+        .prefetch_related('track__artists')
+    )
+
+    genre_counts = {}
+    genre_colors = {
+        "EDM / Electronic": "#1DB954",
+        "US-UK / Pop": "#3B82F6",
+        "V-Pop": "#EC4899",
+        "K-Pop": "#F59E0B",
+        "Acoustic / Lo-Fi": "#A855F7",
+        "Global Pop": "#06B6D4",
+    }
+
+    total_plays = 0
+    for lh in history:
+        t = lh.track
+        artists = list(t.artists.all()) if t else []
+        art_name = artists[0].name if artists else ""
+        trk_name = t.name if t else ""
+        genre = classify_artist_genres(art_name, trk_name)
+        genre_counts[genre] = genre_counts.get(genre, 0) + 1
+        total_plays += 1
+
+    if total_plays == 0:
+        return {"genres": [], "total_plays": 0, "top_genre": "Chưa có dữ liệu"}
+
+    sorted_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)
+    genres_list = []
+    for g_name, count in sorted_genres:
+        pct = round((count / total_plays) * 100, 1)
+        genres_list.append({
+            "name": g_name,
+            "plays": count,
+            "percentage": pct,
+            "color": genre_colors.get(g_name, "#64748B"),
+        })
+
+    return {
+        "genres": genres_list,
+        "total_plays": total_plays,
+        "top_genre": genres_list[0]["name"] if genres_list else "Đa dạng",
+    }
 
 def get_radar_features(user, start_dt, end_dt, time_range_label: str = '30d') -> dict:
     """Tinh toan 5 dac tinh am thanh chuan hoa [0.0, 1.0] cho bieu do Radar."""

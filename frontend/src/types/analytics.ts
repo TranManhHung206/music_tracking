@@ -65,3 +65,17 @@ export interface BarChartRaceData {
   metric: string;
   timeline: TimelineFrame[];
 }
+
+export interface GenreItem {
+  name: string;
+  plays: number;
+  percentage: number;
+  color: string;
+}
+
+export interface GenreDistributionData {
+  genres: GenreItem[];
+  total_plays: number;
+  top_genre: string;
+}
+

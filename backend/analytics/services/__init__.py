@@ -14,6 +14,7 @@ from .calculations import (
     get_radar_features,
     get_listening_heatmap,
     get_bar_chart_race,
+    get_genre_distribution,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     'get_radar_features',
     'get_listening_heatmap',
     'get_bar_chart_race',
+    'get_genre_distribution',
 ]

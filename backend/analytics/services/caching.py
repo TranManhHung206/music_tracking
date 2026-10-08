@@ -27,23 +27,60 @@ def get_or_set_cached_metric(cache_key: str, ttl: int, compute_fn):
     # Tinh toan truc tiep tu DB
     data = compute_fn()
 
+    # Neu du lieu rong hoac chua co luot nghe nao, chi cache 5 giay de tranh luu cache cu
+    effective_ttl = ttl
+    is_empty = False
+    if isinstance(data, dict):
+        if data.get('total_plays') == 0:
+            is_empty = True
+        elif 'tracks' in data and len(data['tracks']) == 0:
+            is_empty = True
+        elif 'artists' in data and len(data['artists']) == 0:
+            is_empty = True
+        elif 'genres' in data and len(data['genres']) == 0:
+            is_empty = True
+        elif 'timeline' in data and len(data['timeline']) == 0:
+            is_empty = True
+    elif isinstance(data, list) and len(data) == 0:
+        is_empty = True
+
+    if is_empty:
+        effective_ttl = 5
+
     try:
-        cache.set(cache_key, data, timeout=ttl)
+        cache.set(cache_key, data, timeout=effective_ttl)
     except Exception as e:
         logger.warning(f"Cache set failed for {cache_key}: {e}.")
 
     return data
 
 def invalidate_user_analytics_cache(user_id: int):
-    """Xoa cache thong ke cua user khi co bai hat moi duoc scrobble."""
+    """Xoa toan bo cache thong ke cua user khi co du lieu moi hoac dang nhap lai."""
     try:
-        # Neu dung RedisCache ho tro delete_pattern
+        # 1. Neu la Redis hoac cache backend co ho tro delete_pattern
         if hasattr(cache, 'delete_pattern'):
             cache.delete_pattern(f"analytics:{user_id}:*")
-        else:
-            # Fallback xoa cac keys pho bien
-            for metric in ['summary', 'top_tracks', 'top_artists', 'radar', 'heatmap', 'bar_chart_race']:
-                for r in ['7d', '30d', '1y']:
-                    cache.delete(build_analytics_cache_key(user_id, metric, r))
+            return
+
+        # 2. Neu la LocMemCache (chay local dev)
+        if hasattr(cache, '_cache'):
+            try:
+                prefix = f"analytics:{user_id}:"
+                keys_to_delete = [k for k in list(cache._cache.keys()) if prefix in k]
+                for k in keys_to_delete:
+                    cache.delete(k)
+            except Exception:
+                pass
+
+        # 3. Quet va xoa toan bo to hop key pho bien
+        metrics = ['summary', 'top_tracks', 'top_artists', 'radar', 'heatmap', 'bar_chart_race', 'genres']
+        ranges = ['7d', '30d', '1y']
+        limits = [5, 10, 20, 50]
+
+        for metric in metrics:
+            for r in ranges:
+                cache.delete(build_analytics_cache_key(user_id, metric, r))
+                for lim in limits:
+                    cache.delete(f"{build_analytics_cache_key(user_id, metric, r)}:{lim}")
     except Exception as e:
         logger.warning(f"Invalidate cache failed for user {user_id}: {e}.")
