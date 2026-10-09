@@ -162,3 +162,42 @@ class BarChartRaceAnalyticsView(APIView):
 
         result = get_or_set_cached_metric(cache_key, ttl, compute)
         return Response(result, status=status.HTTP_200_OK)
+
+class GenreDistributionView(APIView):
+    """API lay ti le phan bo the loai am nhac (EDM, US-UK, V-Pop, v.v.)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        time_range = request.query_params.get('time_range', '30d')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
+        cache_key = build_analytics_cache_key(request.user.id, 'genres', range_key)
+        ttl = get_cache_ttl_for_range(range_key)
+
+        def compute():
+            from .services.calculations import get_genre_distribution
+            return get_genre_distribution(request.user, start_dt, end_dt)
+
+        result = get_or_set_cached_metric(cache_key, ttl, compute)
+        return Response(result, status=status.HTTP_200_OK)
+
+class CalendarPeriodsListView(APIView):
+    """API tra ve danh sach cac ky thoi gian Tu Hien Tai Ve Qua Khu (Tuan / Thang / Nam)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        period_type = request.query_params.get('period_type', 'week')
+        try:
+            limit = min(max(int(request.query_params.get('limit', 12)), 1), 52)
+        except ValueError:
+            limit = 12
+
+        from .services.filters import get_calendar_periods
+        periods = get_calendar_periods(request.user, period_type=period_type, limit=limit)
+        return Response({
+            "period_type": period_type,
+            "periods": periods
+        }, status=status.HTTP_200_OK)
+

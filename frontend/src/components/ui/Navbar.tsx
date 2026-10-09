@@ -1,21 +1,25 @@
 import React from 'react';
-import { Music, RefreshCw, LogOut, CheckCircle, Radio } from 'lucide-react';
+import { Music, RefreshCw, LogOut, CheckCircle, Radio, EyeOff, ShieldAlert } from 'lucide-react';
 import type { UserProfile } from '../../types/auth';
 
 interface NavbarProps {
   user: UserProfile | null;
+  isDemoMode?: boolean;
   isSyncing: boolean;
   onSync: () => void;
   onLogout: () => void;
   onLogin: () => void;
+  onExitDemo?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   user,
+  isDemoMode = false,
   isSyncing,
   onSync,
   onLogout,
   onLogin,
+  onExitDemo,
 }) => {
   return (
     <header className="w-full bg-[#0B0F17]/90 backdrop-blur-md border-b border-[#1E293B] sticky top-0 z-50">
@@ -33,14 +37,53 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* User Info & Actions */}
-        <div className="flex items-center space-x-4">
-          {user ? (
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          {isDemoMode ? (
             <>
+              {/* Demo Mode Badge */}
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] bg-amber-950/60 border border-amber-800 text-amber-400 font-medium">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Chế độ Xem thử</span>
+              </div>
+
               {/* Sync Button */}
               <button
                 onClick={onSync}
                 disabled={isSyncing}
                 className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#131B2E] border border-[#1E293B] text-slate-300 hover:text-white hover:border-[#1DB954]/50 transition-all cursor-pointer disabled:opacity-50"
+                title="Đồng bộ lịch sử nghe nhạc từ Spotify"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#1DB954] ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ Spotify'}</span>
+              </button>
+
+              {/* Connect Spotify CTA */}
+              <button
+                onClick={onLogin}
+                className="flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#1DB954] text-black hover:bg-[#1ED760] transition-all cursor-pointer shadow-md shadow-[#1DB954]/20"
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>Đăng nhập Spotify</span>
+              </button>
+
+              {/* Exit Demo Button */}
+              {onExitDemo && (
+                <button
+                  onClick={onExitDemo}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-[#131B2E] transition-all cursor-pointer"
+                  title="Thoát chế độ Xem thử"
+                >
+                  <EyeOff className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          ) : user ? (
+            <>
+              {/* Sync Button */}
+              <button
+                onClick={onSync}
+                disabled={isSyncing}
+                className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#131B2E] border border-[#1E293B] text-slate-300 hover:text-white hover:border-[#1DB954]/50 transition-all cursor-pointer disabled:opacity-50"
                 title="Đồng bộ lịch sử nghe nhạc mới nhất từ Spotify"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#1DB954] ${isSyncing ? 'animate-spin' : ''}`} />
@@ -54,7 +97,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
 
               {/* User Avatar & Name */}
-              <div className="flex items-center space-x-3 pl-2 border-l border-[#1E293B]">
+              <div className="flex items-center space-x-2.5 pl-2 border-l border-[#1E293B]">
                 {user.profile_image_url ? (
                   <img
                     src={user.profile_image_url}
@@ -66,14 +109,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {user.display_name ? user.display_name.charAt(0).toUpperCase() : 'U'}
                   </div>
                 )}
-                <span className="text-sm font-medium text-slate-200 hidden sm:inline">
+                <span className="text-sm font-medium text-slate-200 hidden sm:inline max-w-[120px] truncate">
                   {user.display_name || user.username}
                 </span>
 
                 <button
                   onClick={onLogout}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-[#131B2E] transition-all cursor-pointer"
-                  title="Đăng xuất"
+                  title="Đăng xuất khỏi hệ thống"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -85,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#1DB954] text-black hover:bg-[#1ED760] transition-all cursor-pointer shadow-lg shadow-[#1DB954]/20"
             >
               <CheckCircle className="w-4 h-4" />
-              <span>Kết nối Spotify</span>
+              <span>Đăng nhập bằng Spotify</span>
             </button>
           )}
         </div>

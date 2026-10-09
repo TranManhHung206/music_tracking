@@ -16,6 +16,8 @@ from .views import (
     RadarFeaturesAnalyticsView,
     HeatmapAnalyticsView,
     BarChartRaceAnalyticsView,
+    GenreDistributionView,
+    CalendarPeriodsListView,
 )
 
 app_name = 'analytics'
@@ -27,4 +29,6 @@ urlpatterns = [
     path('radar/', RadarFeaturesAnalyticsView.as_view(), name='radar'),
     path('heatmap/', HeatmapAnalyticsView.as_view(), name='heatmap'),
     path('bar-chart-race/', BarChartRaceAnalyticsView.as_view(), name='bar_chart_race'),
+    path('genres/', GenreDistributionView.as_view(), name='genres'),
+    path('periods/', CalendarPeriodsListView.as_view(), name='periods'),
 ]

@@ -211,4 +211,61 @@ class CachingAndSecurityTests(AnalyticsBaseTestCase):
         self.assertLess(s_dt, e_dt)
 
         s_dt, e_dt, key = get_time_range_bounds('custom', '2025-01-01', '2025-01-31')
-        self.assertTrue(key.startswith('custom_'))
+        self.assertTrue(key.startswith('period_'))
+
+        s_dt, e_dt, key = get_time_range_bounds(start_date_str='2026-10-01', end_date_str='2026-10-31')
+        self.assertEqual(key, 'period_2026-10-01_2026-10-31')
+
+class CalendarPeriodsTests(AnalyticsBaseTestCase):
+    """Kiem thu danh sach ky lich thoi gian va pham vi khong co du lieu."""
+
+    def test_calendar_periods_endpoint_week(self):
+        url = '/api/analytics/periods/?period_type=week&limit=6'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data['period_type'], 'week')
+        self.assertEqual(len(data['periods']), 6)
+        # Ky dau tien bat buoc la hien tai
+        self.assertTrue(data['periods'][0]['is_current'])
+        # Cac ky tiep theo phai la qua khu
+        for p in data['periods'][1:]:
+            self.assertFalse(p['is_current'])
+            self.assertLessEqual(p['start_date'], data['periods'][0]['start_date'])
+
+    def test_calendar_periods_endpoint_month(self):
+        url = '/api/analytics/periods/?period_type=month&limit=4'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data['period_type'], 'month')
+        self.assertEqual(len(data['periods']), 4)
+        self.assertTrue(data['periods'][0]['is_current'])
+        self.assertFalse(data['periods'][1]['is_current'])
+
+    def test_calendar_periods_endpoint_year(self):
+        url = '/api/analytics/periods/?period_type=year&limit=3'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data['period_type'], 'year')
+        self.assertEqual(len(data['periods']), 3)
+        self.assertTrue(data['periods'][0]['is_current'])
+
+    def test_calendar_period_empty_summary(self):
+        # Truy van khoang thoi gian xa trong qua khu ma nguoi dung chua co du lieu
+        url = '/api/analytics/summary/?start_date=2020-01-01&end_date=2020-01-07'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['total_plays'], 0)
+        self.assertEqual(data['unique_artists_count'], 0)
+
+    def test_calendar_periods_unauthenticated(self):
+        self.client.logout()
+        response = self.client.get('/api/analytics/periods/')
+        self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+

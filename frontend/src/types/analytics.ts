@@ -65,3 +65,70 @@ export interface BarChartRaceData {
   metric: string;
   timeline: TimelineFrame[];
 }
+
+export interface GenreItem {
+  name: string;
+  plays: number;
+  percentage: number;
+  color: string;
+}
+
+export interface GenreDistributionData {
+  genres: GenreItem[];
+  total_plays: number;
+  top_genre: string;
+}
+
+export interface HistoryTrackArtist {
+  spotify_id: string;
+  name: string;
+  genres?: string[];
+  image_url?: string | null;
+}
+
+export interface HistoryTrackAlbum {
+  spotify_id: string;
+  name: string;
+  release_date?: string;
+  image_url?: string | null;
+}
+
+export interface HistoryTrack {
+  spotify_id: string;
+  name: string;
+  duration_ms: number;
+  album?: HistoryTrackAlbum | null;
+  artists: HistoryTrackArtist[];
+  danceability?: number;
+  energy?: number;
+  valence?: number;
+  acousticness?: number;
+  tempo?: number;
+  features_synced?: boolean;
+}
+
+export interface ListeningHistoryRecord {
+  id: number;
+  track: HistoryTrack;
+  played_at: string;
+  context_type?: string | null;
+  created_at: string;
+}
+
+export type CalendarPeriodType = 'week' | 'month' | 'year';
+
+export interface CalendarPeriodItem {
+  key: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  is_current: boolean;
+  play_count: number;
+}
+
+export interface CalendarPeriodsResponse {
+  period_type: CalendarPeriodType;
+  periods: CalendarPeriodItem[];
+}
+
+

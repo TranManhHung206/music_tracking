@@ -31,14 +31,14 @@ Bạn BẮT BUỘC phải trả về định dạng Strict JSON (không dùng Ma
   "tagline": "Khẩu hiệu ngắn gọn đúc kết phong cách (1 câu)",
   "vibe_summary": "Phân tích tâm lý và thói quen nghe nhạc chi tiết từ 2-3 câu bằng tiếng Việt có dấu.",
   "mood_distribution": {
-    "energetic": 45,
-    "melancholic": 30,
-    "focused": 25
+    "energetic": <tính toán số nguyên % dựa trên energy và nhịp điệu bài hát>,
+    "melancholic": <tính toán số nguyên % dựa trên valence thấp và các bài acoustic/trầm>,
+    "focused": <tính toán số nguyên % còn lại để tổng bằng 100>
   },
   "recommended_listening_time": "Khung giờ nghe lý tưởng (ví dụ: 21:00 - 23:00)",
   "ai_advice": "Lời khuyên âm nhạc dành riêng cho họ (1-2 câu tiếng Việt)."
 }
-Lưu ý quan trọng: Tổng các giá trị phần trăm trong mood_distribution phải bằng đúng 100.
+Lưu ý quan trọng: Tuyệt đối không dùng số cố định mẫu. Hãy phân bổ 3 tỷ lệ phần trăm trong mood_distribution linh hoạt theo đúng chỉ số audio features và các nghệ sĩ thực tế của người dùng sao cho tổng đúng 100.
 """
 
 def extract_user_music_context(user, period_type: str = 'monthly') -> dict:

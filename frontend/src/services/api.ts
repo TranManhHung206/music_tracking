@@ -8,8 +8,24 @@ import type {
   RadarData,
   HeatmapData,
   BarChartRaceData,
+  GenreDistributionData,
+  ListeningHistoryRecord,
+  CalendarPeriodType,
+  CalendarPeriodItem,
 } from '../types/analytics';
 import type { AIMusicPersona, RecommendationResult } from '../types/ai';
+
+export type TimeFilterInput = TimeRange | { time_range?: string; start_date?: string; end_date?: string };
+
+function buildTimeParams(filter?: TimeFilterInput): string {
+  if (!filter) return 'time_range=30d';
+  if (typeof filter === 'string') return `time_range=${filter}`;
+  const parts: string[] = [];
+  if (filter.time_range) parts.push(`time_range=${filter.time_range}`);
+  if (filter.start_date) parts.push(`start_date=${filter.start_date}`);
+  if (filter.end_date) parts.push(`end_date=${filter.end_date}`);
+  return parts.length > 0 ? parts.join('&') : 'time_range=30d';
+}
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -24,7 +40,7 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
   if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.Authorization = `Token ${token}`;
   }
   return config;
 });
@@ -221,6 +237,137 @@ export const MOCK_PERSONA: AIMusicPersona = {
   created_at: new Date().toISOString(),
 };
 
+export const MOCK_GENRES: GenreDistributionData = {
+  genres: [
+    { name: 'EDM / Electronic', plays: 185, percentage: 43.2, color: '#1DB954' },
+    { name: 'Global Pop', plays: 120, percentage: 28.0, color: '#06B6D4' },
+    { name: 'V-Pop', plays: 68, percentage: 15.9, color: '#EC4899' },
+    { name: 'US-UK / Pop', plays: 35, percentage: 8.2, color: '#3B82F6' },
+    { name: 'Acoustic / Lo-Fi', plays: 20, percentage: 4.7, color: '#A855F7' },
+  ],
+  total_plays: 428,
+  top_genre: 'EDM / Electronic',
+};
+
+export const MOCK_LISTENING_HISTORY: ListeningHistoryRecord[] = [
+  {
+    id: 101,
+    played_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    context_type: 'playlist',
+    track: {
+      spotify_id: 'mock_1',
+      name: 'Chúng Ta Của Tương Lai',
+      duration_ms: 245000,
+      album: {
+        spotify_id: 'alb_1',
+        name: 'Chúng Ta',
+        image_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop',
+      },
+      artists: [{ spotify_id: 'art_1', name: 'Sơn Tùng M-TP' }],
+      danceability: 0.72,
+      energy: 0.81,
+    },
+  },
+  {
+    id: 102,
+    played_at: new Date(Date.now() - 22 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 22 * 60 * 1000).toISOString(),
+    context_type: 'album',
+    track: {
+      spotify_id: 'mock_2',
+      name: 'Nấu Ăn Cho Em',
+      duration_ms: 220000,
+      album: {
+        spotify_id: 'alb_2',
+        name: 'Nấu Ăn Cho Em',
+        image_url: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop',
+      },
+      artists: [
+        { spotify_id: 'art_2', name: 'Đen Vâu' },
+        { spotify_id: 'art_pialinh', name: 'PiaLinh' },
+      ],
+      danceability: 0.65,
+      energy: 0.58,
+    },
+  },
+  {
+    id: 103,
+    played_at: new Date(Date.now() - 54 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 54 * 60 * 1000).toISOString(),
+    context_type: 'playlist',
+    track: {
+      spotify_id: 'mock_3',
+      name: 'Từng Là',
+      duration_ms: 215000,
+      album: {
+        spotify_id: 'alb_3',
+        name: 'Từng Là',
+        image_url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop',
+      },
+      artists: [{ spotify_id: 'art_4', name: 'Vũ Cát Tường' }],
+      danceability: 0.58,
+      energy: 0.45,
+    },
+  },
+  {
+    id: 104,
+    played_at: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    context_type: 'user_collection',
+    track: {
+      spotify_id: 'mock_4',
+      name: 'Blinding Lights',
+      duration_ms: 200000,
+      album: {
+        spotify_id: 'alb_4',
+        name: 'After Hours',
+        image_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+      },
+      artists: [{ spotify_id: 'art_3', name: 'The Weeknd' }],
+      danceability: 0.85,
+      energy: 0.89,
+    },
+  },
+  {
+    id: 105,
+    played_at: new Date(Date.now() - 165 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 165 * 60 * 1000).toISOString(),
+    context_type: 'playlist',
+    track: {
+      spotify_id: 'mock_5',
+      name: 'Levitating',
+      duration_ms: 203000,
+      album: {
+        spotify_id: 'alb_5',
+        name: 'Future Nostalgia',
+        image_url: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop',
+      },
+      artists: [{ spotify_id: 'art_5', name: 'Dua Lipa' }],
+      danceability: 0.79,
+      energy: 0.82,
+    },
+  },
+];
+
+export const MOCK_CALENDAR_PERIODS: Record<CalendarPeriodType, CalendarPeriodItem[]> = {
+  week: [
+    { key: '2026-W41', label: 'Tuần này', start_date: '2026-10-05', end_date: '2026-10-11', is_current: true, play_count: 222 },
+    { key: '2026-W40', label: 'Tuần 40', start_date: '2026-09-28', end_date: '2026-10-04', is_current: false, play_count: 0 },
+    { key: '2026-W39', label: 'Tuần 39', start_date: '2026-09-21', end_date: '2026-09-27', is_current: false, play_count: 0 },
+  ],
+  month: [
+    { key: '2026-10', label: 'Tháng 10/2026', start_date: '2026-10-01', end_date: '2026-10-31', is_current: true, play_count: 222 },
+    { key: '2026-09', label: 'Tháng 09/2026', start_date: '2026-09-01', end_date: '2026-09-30', is_current: false, play_count: 0 },
+    { key: '2026-08', label: 'Tháng 08/2026', start_date: '2026-08-01', end_date: '2026-08-31', is_current: false, play_count: 0 },
+  ],
+  year: [
+    { key: '2026', label: 'Năm 2026', start_date: '2026-01-01', end_date: '2026-12-31', is_current: true, play_count: 222 },
+    { key: '2025', label: 'Năm 2025', start_date: '2025-01-01', end_date: '2025-12-31', is_current: false, play_count: 0 },
+    { key: '2024', label: 'Năm 2024', start_date: '2024-01-01', end_date: '2024-12-31', is_current: false, play_count: 0 },
+  ],
+};
+
 // API Services voi Graceful Fallback sang Mock Data
 export const api = {
   // Auth
@@ -234,11 +381,16 @@ export const api = {
   },
 
   async getCurrentUser(): Promise<UserProfile | null> {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return null;
+    }
     try {
       const res = await apiClient.get('/api/users/me/');
       return res.data.user || res.data;
     } catch {
-      return MOCK_USER;
+      localStorage.removeItem('access_token');
+      return null;
     }
   },
 
@@ -251,67 +403,110 @@ export const api = {
   },
 
   // Tracker
-  async triggerSync(): Promise<{ scrobbled_count: number }> {
+  async triggerSync(): Promise<{ scrobbled_count: number; message?: string }> {
+    const res = await apiClient.post('/api/tracker/sync/');
+    return res.data;
+  },
+
+  async getListeningHistory(limit: number = 20): Promise<ListeningHistoryRecord[]> {
     try {
-      const res = await apiClient.post('/api/tracker/sync/');
-      return res.data;
+      const res = await apiClient.get(`/api/tracker/history/?limit=${limit}`);
+      if (Array.isArray(res.data)) {
+        return res.data;
+      }
+      if (res.data && Array.isArray(res.data.results)) {
+        return res.data.results;
+      }
+      return MOCK_LISTENING_HISTORY.slice(0, limit);
     } catch {
-      return { scrobbled_count: 5 };
+      return MOCK_LISTENING_HISTORY.slice(0, limit);
+    }
+  },
+
+  // Analytics Calendar Periods
+  async getAvailablePeriods(periodType: CalendarPeriodType = 'week', limit: number = 12): Promise<CalendarPeriodItem[]> {
+    try {
+      const res = await apiClient.get(`/api/analytics/periods/?period_type=${periodType}&limit=${limit}`);
+      if (res.data && Array.isArray(res.data.periods)) {
+        return res.data.periods;
+      }
+      return MOCK_CALENDAR_PERIODS[periodType] || [];
+    } catch {
+      return MOCK_CALENDAR_PERIODS[periodType] || [];
     }
   },
 
   // Analytics
-  async getSummary(range: TimeRange = '30d'): Promise<SummaryStats> {
+  async getSummary(filter?: TimeFilterInput): Promise<SummaryStats> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/summary/?time_range=${range}`);
+      const res = await apiClient.get(`/api/analytics/summary/?${params}`);
       return res.data;
     } catch {
-      return { ...MOCK_SUMMARY, time_range: range };
+      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
+      return { ...MOCK_SUMMARY, time_range: rangeStr };
     }
   },
 
-  async getTopTracks(range: TimeRange = '30d', limit: number = 5): Promise<TopTrack[]> {
+  async getTopTracks(filter?: TimeFilterInput, limit: number = 5): Promise<TopTrack[]> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-tracks/?time_range=${range}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`);
       return res.data.tracks || res.data;
     } catch {
       return MOCK_TOP_TRACKS.slice(0, limit);
     }
   },
 
-  async getTopArtists(range: TimeRange = '30d', limit: number = 5): Promise<TopArtist[]> {
+  async getTopArtists(filter?: TimeFilterInput, limit: number = 5): Promise<TopArtist[]> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-artists/?time_range=${range}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`);
       return res.data.artists || res.data;
     } catch {
       return MOCK_TOP_ARTISTS.slice(0, limit);
     }
   },
 
-  async getRadar(range: TimeRange = '30d'): Promise<RadarData> {
+  async getRadar(filter?: TimeFilterInput): Promise<RadarData> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/radar/?time_range=${range}`);
+      const res = await apiClient.get(`/api/analytics/radar/?${params}`);
       return res.data;
     } catch {
-      return { ...MOCK_RADAR, time_range: range };
+      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
+      return { ...MOCK_RADAR, time_range: rangeStr };
     }
   },
 
-  async getHeatmap(range: TimeRange = '30d'): Promise<HeatmapData> {
+  async getHeatmap(filter?: TimeFilterInput): Promise<HeatmapData> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/heatmap/?time_range=${range}`);
+      const res = await apiClient.get(`/api/analytics/heatmap/?${params}`);
       return res.data;
     } catch {
-      return { ...MOCK_HEATMAP, time_range: range };
+      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
+      return { ...MOCK_HEATMAP, time_range: rangeStr };
     }
   },
 
-  async getBarChartRace(range: TimeRange = '1y'): Promise<BarChartRaceData> {
+  async getBarChartRace(filter?: TimeFilterInput): Promise<BarChartRaceData> {
+    const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/bar-chart-race/?time_range=${range}`);
+      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`);
       return res.data;
     } catch {
       return MOCK_RACE;
+    }
+  },
+
+  async getGenreDistribution(filter?: TimeFilterInput): Promise<GenreDistributionData> {
+    const params = buildTimeParams(filter);
+    try {
+      const res = await apiClient.get(`/api/analytics/genres/?${params}`);
+      return res.data;
+    } catch {
+      return MOCK_GENRES;
     }
   },
 

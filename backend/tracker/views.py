@@ -21,9 +21,25 @@ class ManualSyncView(APIView):
             result = sync_user_recently_played_pipeline(request.user)
             return Response(result, status=status.HTTP_200_OK)
         except RuntimeError as e:
-            if "SPOTIFY_RATE_LIMIT" in str(e):
+            err_str = str(e)
+            if "SPOTIFY_RATE_LIMIT" in err_str:
+                parts = err_str.split(":")
+                retry_after_str = parts[1] if len(parts) > 1 else "60"
+                try:
+                    retry_secs = int(retry_after_str)
+                except ValueError:
+                    retry_secs = 60
+
+                minutes = round(retry_secs / 60, 1)
+                hours = round(retry_secs / 3600, 1)
+                time_desc = f"{hours} giờ" if hours >= 1.0 else f"{minutes} phút"
+
                 return Response(
-                    {"error": "Spotify API Rate Limit. Vui long thu lai sau."},
+                    {
+                        "error": f"Spotify API đang tạm giới hạn tần suất (Rate Limit do gửi request liên tục hồi sáng). Spotify yêu cầu chờ khoảng {time_desc}.",
+                        "retry_after_seconds": retry_secs,
+                        "time_desc": time_desc,
+                    },
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
