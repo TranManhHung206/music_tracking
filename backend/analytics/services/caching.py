@@ -59,16 +59,22 @@ def invalidate_user_analytics_cache(user_id: int):
     try:
         # 1. Neu la Redis hoac cache backend co ho tro delete_pattern
         if hasattr(cache, 'delete_pattern'):
-            cache.delete_pattern(f"analytics:{user_id}:*")
-            return
+            try:
+                cache.delete_pattern(f"analytics:{user_id}:*")
+                return
+            except Exception:
+                pass
 
-        # 2. Neu la LocMemCache (chay local dev)
+        # 2. Neu la LocMemCache (chay local dev) - Xoa truc tiep tu internal dict
         if hasattr(cache, '_cache'):
             try:
                 prefix = f"analytics:{user_id}:"
-                keys_to_delete = [k for k in list(cache._cache.keys()) if prefix in k]
-                for k in keys_to_delete:
-                    cache.delete(k)
+                raw_keys = list(cache._cache.keys())
+                for k in raw_keys:
+                    if prefix in str(k):
+                        cache._cache.pop(k, None)
+                        if hasattr(cache, '_expire_info'):
+                            cache._expire_info.pop(k, None)
             except Exception:
                 pass
 
@@ -82,5 +88,12 @@ def invalidate_user_analytics_cache(user_id: int):
                 cache.delete(build_analytics_cache_key(user_id, metric, r))
                 for lim in limits:
                     cache.delete(f"{build_analytics_cache_key(user_id, metric, r)}:{lim}")
+
+        # 4. Neu chay LocMemCache local va khong co delete_pattern, don dep sach cache de tranh sai lech so lieu
+        if not hasattr(cache, 'delete_pattern'):
+            try:
+                cache.clear()
+            except Exception:
+                pass
     except Exception as e:
         logger.warning(f"Invalidate cache failed for user {user_id}: {e}.")

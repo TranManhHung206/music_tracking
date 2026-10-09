@@ -182,3 +182,22 @@ class GenreDistributionView(APIView):
 
         result = get_or_set_cached_metric(cache_key, ttl, compute)
         return Response(result, status=status.HTTP_200_OK)
+
+class CalendarPeriodsListView(APIView):
+    """API tra ve danh sach cac ky thoi gian Tu Hien Tai Ve Qua Khu (Tuan / Thang / Nam)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        period_type = request.query_params.get('period_type', 'week')
+        try:
+            limit = min(max(int(request.query_params.get('limit', 12)), 1), 52)
+        except ValueError:
+            limit = 12
+
+        from .services.filters import get_calendar_periods
+        periods = get_calendar_periods(request.user, period_type=period_type, limit=limit)
+        return Response({
+            "period_type": period_type,
+            "periods": periods
+        }, status=status.HTTP_200_OK)
+
