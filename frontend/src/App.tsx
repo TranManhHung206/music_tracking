@@ -17,9 +17,10 @@ import type {
   SummaryStats,
   TopTrack,
   TopArtist,
+  TopAlbum,
   RadarData,
   HeatmapData,
-  BarChartRaceData,
+  WeeklyComparisonData,
   GenreDistributionData,
   ListeningHistoryRecord,
 } from './types/analytics';
@@ -31,9 +32,10 @@ import {
   MOCK_SUMMARY,
   MOCK_TOP_TRACKS,
   MOCK_TOP_ARTISTS,
+  MOCK_TOP_ALBUMS,
   MOCK_RADAR,
   MOCK_HEATMAP,
-  MOCK_RACE,
+  MOCK_WEEKLY_COMPARISON,
   MOCK_GENRES,
   MOCK_PERSONA,
   MOCK_LISTENING_HISTORY,
@@ -49,11 +51,12 @@ import { CalendarPeriodSelector } from './components/ui/CalendarPeriodSelector';
 import { RadarChartComponent } from './components/charts/RadarChartComponent';
 import { ListeningHeatmap } from './components/charts/ListeningHeatmap';
 import { GenreDistribution } from './components/charts/GenreDistribution';
-import { BarChartRace } from './components/charts/BarChartRace';
+import { WeeklyComparisonChart } from './components/charts/WeeklyComparisonChart';
 
 import { PersonaCard } from './components/cards/PersonaCard';
 import { TopTracksList } from './components/cards/TopTracksList';
 import { TopArtistsList } from './components/cards/TopArtistsList';
+import { TopAlbumsList } from './components/cards/TopAlbumsList';
 import { RecentScrobblesList } from './components/cards/RecentScrobblesList';
 import { RecommendationModal } from './components/cards/RecommendationModal';
 import { ShareableCard } from './components/cards/ShareableCard';
@@ -103,9 +106,10 @@ export function App() {
   const [summary, setSummary] = useState<SummaryStats>(MOCK_SUMMARY);
   const [topTracks, setTopTracks] = useState<TopTrack[]>(MOCK_TOP_TRACKS);
   const [topArtists, setTopArtists] = useState<TopArtist[]>(MOCK_TOP_ARTISTS);
+  const [topAlbums, setTopAlbums] = useState<TopAlbum[]>(MOCK_TOP_ALBUMS);
   const [radarData, setRadarData] = useState<RadarData>(MOCK_RADAR);
   const [heatmapData, setHeatmapData] = useState<HeatmapData>(MOCK_HEATMAP);
-  const [raceData, setRaceData] = useState<BarChartRaceData>(MOCK_RACE);
+  const [weeklyComparison, setWeeklyComparison] = useState<WeeklyComparisonData>(MOCK_WEEKLY_COMPARISON);
   const [genreData, setGenreData] = useState<GenreDistributionData>(MOCK_GENRES);
   const [recentScrobbles, setRecentScrobbles] = useState<ListeningHistoryRecord[]>(MOCK_LISTENING_HISTORY);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -129,13 +133,14 @@ export function App() {
         ? { start_date: period.start_date, end_date: period.end_date }
         : '30d';
 
-      const [sum, tracks, artists, radar, heatmap, race, genres, p, history] = await Promise.all([
+      const [sum, tracks, artists, albums, radar, heatmap, weeklyComp, genres, p, history] = await Promise.all([
         api.getSummary(timeFilter),
         api.getTopTracks(timeFilter, 5),
         api.getTopArtists(timeFilter, 5),
+        api.getTopAlbums(timeFilter, 5),
         api.getRadar(timeFilter),
         api.getHeatmap(timeFilter),
-        api.getBarChartRace('1y'),
+        api.getWeeklyComparison(timeFilter),
         api.getGenreDistribution(timeFilter),
         api.getLatestPersona('monthly'),
         api.getListeningHistory(20),
@@ -144,9 +149,10 @@ export function App() {
       setSummary(sum);
       setTopTracks(tracks);
       setTopArtists(artists);
+      setTopAlbums(albums);
       setRadarData(radar);
       setHeatmapData(heatmap);
-      setRaceData(race);
+      setWeeklyComparison(weeklyComp);
       setGenreData(genres);
       setPersona(p);
       setRecentScrobbles(history);
@@ -323,9 +329,10 @@ export function App() {
     setSummary(MOCK_SUMMARY);
     setTopTracks(MOCK_TOP_TRACKS);
     setTopArtists(MOCK_TOP_ARTISTS);
+    setTopAlbums(MOCK_TOP_ALBUMS);
     setRadarData(MOCK_RADAR);
     setHeatmapData(MOCK_HEATMAP);
-    setRaceData(MOCK_RACE);
+    setWeeklyComparison(MOCK_WEEKLY_COMPARISON);
     setGenreData(MOCK_GENRES);
     setPersona(MOCK_PERSONA);
     addToast('info', 'Đã bật Chế độ Xem thử (Demo) với dữ liệu mẫu.');
@@ -572,15 +579,16 @@ export function App() {
                 <GenreDistribution data={genreData} />
               </section>
 
-              {/* 5. Top Charts: Tracks & Artists */}
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* 5. Top Charts: Tracks, Artists & Albums */}
+              <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <TopTracksList tracks={topTracks} onFindSimilar={handleFindSimilarSongs} />
                 <TopArtistsList artists={topArtists} />
+                <TopAlbumsList albums={topAlbums} />
               </section>
 
-              {/* 7. Animated Bar Chart Race */}
+              {/* 7. Biểu Đồ Cột So Sánh Lượt Nghe Theo Tuần */}
               <section>
-                <BarChartRace timeline={raceData.timeline} />
+                <WeeklyComparisonChart data={weeklyComparison} />
               </section>
             </>
           )}

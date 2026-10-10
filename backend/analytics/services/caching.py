@@ -39,6 +39,10 @@ def get_or_set_cached_metric(cache_key: str, ttl: int, compute_fn):
             is_empty = True
         elif 'genres' in data and len(data['genres']) == 0:
             is_empty = True
+        elif 'albums' in data and len(data['albums']) == 0:
+            is_empty = True
+        elif 'days' in data and len(data['days']) == 0:
+            is_empty = True
         elif 'timeline' in data and len(data['timeline']) == 0:
             is_empty = True
     elif isinstance(data, list) and len(data) == 0:
@@ -79,7 +83,7 @@ def invalidate_user_analytics_cache(user_id: int):
                 pass
 
         # 3. Quet va xoa toan bo to hop key pho bien
-        metrics = ['summary', 'top_tracks', 'top_artists', 'radar', 'heatmap', 'bar_chart_race', 'genres']
+        metrics = ['summary', 'top_tracks', 'top_artists', 'top_albums', 'radar', 'heatmap', 'bar_chart_race', 'weekly_comparison', 'genres']
         ranges = ['7d', '30d', '1y']
         limits = [5, 10, 20, 50]
 

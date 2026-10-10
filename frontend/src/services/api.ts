@@ -5,9 +5,11 @@ import type {
   SummaryStats,
   TopTrack,
   TopArtist,
+  TopAlbum,
   RadarData,
   HeatmapData,
   BarChartRaceData,
+  WeeklyComparisonData,
   GenreDistributionData,
   ListeningHistoryRecord,
   CalendarPeriodType,
@@ -216,6 +218,71 @@ export const MOCK_RACE: BarChartRaceData = {
       ],
     },
   ],
+};
+
+export const MOCK_TOP_ALBUMS: TopAlbum[] = [
+  {
+    spotify_id: 'alb_1',
+    name: 'Chúng Ta',
+    image_url: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop',
+    release_date: '2021',
+    artists: ['Sơn Tùng M-TP'],
+    play_count: 58,
+  },
+  {
+    spotify_id: 'alb_2',
+    name: 'Show Của Đen',
+    image_url: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop',
+    release_date: '2023',
+    artists: ['Đen Vâu'],
+    play_count: 46,
+  },
+  {
+    spotify_id: 'alb_3',
+    name: 'After Hours',
+    image_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+    release_date: '2020',
+    artists: ['The Weeknd'],
+    play_count: 39,
+  },
+  {
+    spotify_id: 'alb_4',
+    name: 'Inner Me',
+    image_url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop',
+    release_date: '2019',
+    artists: ['Vũ Cát Tường'],
+    play_count: 32,
+  },
+  {
+    spotify_id: 'alb_5',
+    name: 'Future Nostalgia',
+    image_url: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop',
+    release_date: '2020',
+    artists: ['Dua Lipa'],
+    play_count: 28,
+  },
+];
+
+export const MOCK_WEEKLY_COMPARISON: WeeklyComparisonData = {
+  time_range: '7d',
+  current_week_label: 'Tuần này (05/10 - 11/10)',
+  previous_week_label: 'Tuần trước (28/09 - 04/10)',
+  days: [
+    { day_index: 1, day_name: 'Thứ 2', day_name_en: 'Mon', current_week_plays: 28, previous_week_plays: 20, diff: 8 },
+    { day_index: 2, day_name: 'Thứ 3', day_name_en: 'Tue', current_week_plays: 42, previous_week_plays: 35, diff: 7 },
+    { day_index: 3, day_name: 'Thứ 4', day_name_en: 'Wed', current_week_plays: 35, previous_week_plays: 30, diff: 5 },
+    { day_index: 4, day_name: 'Thứ 5', day_name_en: 'Thu', current_week_plays: 48, previous_week_plays: 38, diff: 10 },
+    { day_index: 5, day_name: 'Thứ 6', day_name_en: 'Fri', current_week_plays: 65, previous_week_plays: 50, diff: 15 },
+    { day_index: 6, day_name: 'Thứ 7', day_name_en: 'Sat', current_week_plays: 55, previous_week_plays: 45, diff: 10 },
+    { day_index: 7, day_name: 'Chủ Nhật', day_name_en: 'Sun', current_week_plays: 38, previous_week_plays: 32, diff: 6 },
+  ],
+  summary: {
+    total_current_week: 311,
+    total_previous_week: 250,
+    growth_percentage: 24.4,
+    peak_day_current: 'Thứ 6',
+    peak_plays_current: 65,
+  },
 };
 
 export const MOCK_PERSONA: AIMusicPersona = {
@@ -468,6 +535,16 @@ export const api = {
     }
   },
 
+  async getTopAlbums(filter?: TimeFilterInput, limit: number = 5): Promise<TopAlbum[]> {
+    const params = buildTimeParams(filter);
+    try {
+      const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`);
+      return res.data.albums || res.data;
+    } catch {
+      return MOCK_TOP_ALBUMS.slice(0, limit);
+    }
+  },
+
   async getRadar(filter?: TimeFilterInput): Promise<RadarData> {
     const params = buildTimeParams(filter);
     try {
@@ -497,6 +574,16 @@ export const api = {
       return res.data;
     } catch {
       return MOCK_RACE;
+    }
+  },
+
+  async getWeeklyComparison(filter?: TimeFilterInput): Promise<WeeklyComparisonData> {
+    const params = buildTimeParams(filter);
+    try {
+      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${params}`);
+      return res.data;
+    } catch {
+      return MOCK_WEEKLY_COMPARISON;
     }
   },
 

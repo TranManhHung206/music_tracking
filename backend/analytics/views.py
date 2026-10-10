@@ -22,9 +22,11 @@ from .services import (
     get_listening_summary,
     get_top_tracks,
     get_top_artists,
+    get_top_albums,
     get_radar_features,
     get_listening_heatmap,
     get_bar_chart_race,
+    get_weekly_comparison,
 )
 
 class SummaryAnalyticsView(APIView):
@@ -200,4 +202,53 @@ class CalendarPeriodsListView(APIView):
             "period_type": period_type,
             "periods": periods
         }, status=status.HTTP_200_OK)
+
+class TopAlbumsAnalyticsView(APIView):
+    """API lay danh sach Top album nghe nhieu nhat."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        time_range = request.query_params.get('time_range', '30d')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        try:
+            limit = min(max(int(request.query_params.get('limit', 10)), 1), 50)
+        except ValueError:
+            limit = 10
+
+        start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
+        cache_key = f"{build_analytics_cache_key(request.user.id, 'top_albums', range_key)}:{limit}"
+        ttl = get_cache_ttl_for_range(range_key)
+
+        def compute():
+            return {
+                "time_range": range_key,
+                "limit": limit,
+                "albums": get_top_albums(request.user, start_dt, end_dt, limit=limit),
+            }
+
+        result = get_or_set_cached_metric(cache_key, ttl, compute)
+        return Response(result, status=status.HTTP_200_OK)
+
+class WeeklyComparisonAnalyticsView(APIView):
+    """API so sanh so luot nghe hang ngay cua tuan nay so voi tuan truoc."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        time_range = request.query_params.get('time_range', '7d')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
+        cache_key = build_analytics_cache_key(request.user.id, 'weekly_comparison', range_key)
+        ttl = get_cache_ttl_for_range(range_key)
+
+        def compute():
+            data = get_weekly_comparison(request.user, start_dt=start_dt, end_dt=end_dt)
+            data["time_range"] = range_key
+            return data
+
+        result = get_or_set_cached_metric(cache_key, ttl, compute)
+        return Response(result, status=status.HTTP_200_OK)
+
 

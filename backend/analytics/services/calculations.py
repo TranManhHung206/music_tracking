@@ -4,10 +4,12 @@ Thuc thi cac truy van tong hop hieu nang cao cap Database bang Django ORM:
 Summary, Top Tracks, Top Artists, Audio Features Radar, Listening Heatmap va Bar Chart Race.
 """
 
+from datetime import timedelta
 from collections import defaultdict
+from django.utils import timezone
 from django.db.models import Count, Avg, Sum, F
 from django.db.models.functions import ExtractIsoWeekDay, ExtractHour, ExtractYear, ExtractMonth
-from tracker.models import ListeningHistory, Track, Artist
+from tracker.models import ListeningHistory, Track, Artist, Album
 
 DAY_NAMES = {
     1: 'Monday',
@@ -520,3 +522,130 @@ def get_bar_chart_race(user, start_dt, end_dt, top_n: int = 5) -> dict:
         "metric": "artists",
         "timeline": timeline,
     }
+
+def get_top_albums(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
+    """Lay danh sach Top album nghe nhieu nhat trong ky."""
+    qs = (
+        ListeningHistory.objects.filter(
+            user=user,
+            played_at__range=(start_dt, end_dt),
+            track__album__isnull=False
+        )
+        .values(
+            album_id=F('track__album__spotify_id'),
+            album_name=F('track__album__name'),
+            image_url=F('track__album__image_url'),
+            release_date=F('track__album__release_date'),
+        )
+        .annotate(play_count=Count('id'))
+        .order_by('-play_count')[:limit]
+    )
+
+    results = []
+    for item in qs:
+        alb_id = item['album_id']
+        artists = list(
+            Artist.objects.filter(albums__spotify_id=alb_id)
+            .values_list('name', flat=True)
+        )
+        if not artists:
+            artists = list(
+                Artist.objects.filter(tracks__album__spotify_id=alb_id)
+                .values_list('name', flat=True)
+                .distinct()
+            )
+        results.append({
+            "spotify_id": alb_id,
+            "name": item['album_name'],
+            "image_url": item['image_url'],
+            "release_date": item['release_date'] or "",
+            "artists": artists,
+            "play_count": item['play_count'],
+        })
+    return results
+
+def get_weekly_comparison(user, start_dt=None, end_dt=None) -> dict:
+    """So sanh so luot nghe hang ngay cua tuan nay so voi tuan truoc."""
+    now = timezone.localtime(timezone.now())
+    if start_dt and end_dt and (end_dt - start_dt).days <= 7:
+        current_week_start = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        current_week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
+
+    current_week_end = current_week_start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+    prev_week_start = current_week_start - timedelta(days=7)
+    prev_week_end = current_week_start - timedelta(microseconds=1)
+
+    curr_qs = (
+        ListeningHistory.objects.filter(user=user, played_at__range=(current_week_start, current_week_end))
+        .annotate(iso_weekday=ExtractIsoWeekDay('played_at'))
+        .values('iso_weekday')
+        .annotate(count=Count('id'))
+    )
+    curr_map = {row['iso_weekday']: row['count'] for row in curr_qs}
+
+    prev_qs = (
+        ListeningHistory.objects.filter(user=user, played_at__range=(prev_week_start, prev_week_end))
+        .annotate(iso_weekday=ExtractIsoWeekDay('played_at'))
+        .values('iso_weekday')
+        .annotate(count=Count('id'))
+    )
+    prev_map = {row['iso_weekday']: row['count'] for row in prev_qs}
+
+    day_config = [
+        (1, "Thứ 2", "Mon"),
+        (2, "Thứ 3", "Tue"),
+        (3, "Thứ 4", "Wed"),
+        (4, "Thứ 5", "Thu"),
+        (5, "Thứ 6", "Fri"),
+        (6, "Thứ 7", "Sat"),
+        (7, "Chủ Nhật", "Sun"),
+    ]
+
+    days = []
+    total_curr = 0
+    total_prev = 0
+    peak_day = "Thứ 2"
+    peak_plays = 0
+
+    for idx, name_vi, name_en in day_config:
+        c_plays = curr_map.get(idx, 0)
+        p_plays = prev_map.get(idx, 0)
+        total_curr += c_plays
+        total_prev += p_plays
+        if c_plays > peak_plays:
+            peak_plays = c_plays
+            peak_day = name_vi
+
+        days.append({
+            "day_index": idx,
+            "day_name": name_vi,
+            "day_name_en": name_en,
+            "current_week_plays": c_plays,
+            "previous_week_plays": p_plays,
+            "diff": c_plays - p_plays,
+        })
+
+    if total_prev > 0:
+        growth = round(((total_curr - total_prev) / total_prev) * 100, 1)
+    elif total_curr > 0:
+        growth = 100.0
+    else:
+        growth = 0.0
+
+    current_label = f"Tuần này ({current_week_start.strftime('%d/%m')} - {current_week_end.strftime('%d/%m')})"
+    prev_label = f"Tuần trước ({prev_week_start.strftime('%d/%m')} - {prev_week_end.strftime('%d/%m')})"
+
+    return {
+        "current_week_label": current_label,
+        "previous_week_label": prev_label,
+        "days": days,
+        "summary": {
+            "total_current_week": total_curr,
+            "total_previous_week": total_prev,
+            "growth_percentage": growth,
+            "peak_day_current": peak_day,
+            "peak_plays_current": peak_plays,
+        }
+    }
+
