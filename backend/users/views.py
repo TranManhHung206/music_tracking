@@ -129,6 +129,16 @@ class SpotifyCallbackView(APIView):
             except Exception:
                 pass
 
+            # Tu dong dong bo lich su nghe nhac moi nhat vao DB ngay sau khi dang nhap
+            try:
+                import threading
+                from tracker.services.ingestion import sync_user_recently_played_pipeline
+                threading.Thread(target=sync_user_recently_played_pipeline, args=(user,), daemon=True).start()
+                print("[SpotifyCallbackView] >>> BUOC 4.1: Da khoi chay sync Spotify ngam luu vao DB.", flush=True)
+            except Exception as sync_err:
+                print(f"[SpotifyCallbackView] Canh bao khoi chay sync ngam: {sync_err}", flush=True)
+
+
             # Neu request den tu trinh duyet thi chuyen huong ve Frontend kem Auth Token
             redirect_to_frontend = request.GET.get('redirect', 'true').lower() == 'true'
             if is_browser and redirect_to_frontend:
