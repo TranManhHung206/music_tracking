@@ -96,6 +96,13 @@ DATABASES = {
     )
 }
 
+# Dam bao SQLite luon su dung duong dan tuyet doi tai backend/db.sqlite3 bat ke CWD khi khoi chay
+if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+    db_name = str(DATABASES['default'].get('NAME', 'db.sqlite3'))
+    if db_name != ':memory:' and not os.path.isabs(db_name):
+        DATABASES['default']['NAME'] = str(BASE_DIR / db_name)
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

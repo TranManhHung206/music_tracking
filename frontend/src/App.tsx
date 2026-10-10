@@ -255,7 +255,9 @@ export function App() {
           addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} lượt nghe mới!`);
           const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
           setAvailablePeriods(updatedPeriods);
-          refreshAllData(selectedPeriod);
+          const activePeriod = (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) || updatedPeriods[0] || null;
+          setSelectedPeriod(activePeriod);
+          refreshAllData(activePeriod);
         }
       } catch {
         // Bo qua loi sync ngam
@@ -274,7 +276,9 @@ export function App() {
           addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} bài hát mới từ Spotify.`);
           const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
           setAvailablePeriods(updatedPeriods);
-          refreshAllData(selectedPeriod);
+          const activePeriod = (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) || updatedPeriods[0] || null;
+          setSelectedPeriod(activePeriod);
+          refreshAllData(activePeriod);
         }
       } catch {
         // Bo qua loi polling ngam
@@ -344,7 +348,9 @@ export function App() {
       addToast('success', `Đồng bộ thành công! Đã ghi nhận ${count} bài hát mới từ Spotify.`);
       const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
       setAvailablePeriods(updatedPeriods);
-      await refreshAllData(selectedPeriod);
+      const activePeriod = (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) || updatedPeriods[0] || null;
+      setSelectedPeriod(activePeriod);
+      await refreshAllData(activePeriod);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
       if (axiosErr?.response?.status === 429) {

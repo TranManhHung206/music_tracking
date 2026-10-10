@@ -228,7 +228,7 @@ _CUSTOM_ARTISTS_LOADED = False
 _LAST_CSV_MTIME = 0.0
 
 def ensure_custom_artists_loaded():
-    """Tu dong kiem tra va nạp ngay file CSV khi nguoi dung moi bo file vao ma khong can khoi dong lai server."""
+    """Tu dong kiem tra va nap ngay file CSV khi nguoi dung moi bo file vao ma khong can khoi dong lai server."""
     global _CUSTOM_ARTISTS_LOADED, _LAST_CSV_MTIME
     if not DATA_DIR.exists():
         return
@@ -243,6 +243,11 @@ def ensure_custom_artists_loaded():
             USUK_ARTISTS.update(foreign)
             _CUSTOM_ARTISTS_LOADED = True
             _LAST_CSV_MTIME = current_mtime
+            try:
+                from django.core.cache import cache
+                cache.clear()
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -258,6 +263,7 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     Phan loai the loai am nhac dua tren ten tat ca nghe si va tieu de bai hat.
     Uu tien nhan dien tieng Viet co dau, danh sach nghe si V-Pop, K-Pop, EDM, US-UK va Russian Pop.
     """
+    ensure_custom_artists_loaded()
     title = track_name or ""
     title_lower = title.lower()
 

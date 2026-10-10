@@ -3,7 +3,7 @@ Ingestion & Scrobbling Service
 Cung cap logic thu thap Recently Played tu Spotify API, deduplication 2 tang, va dong bo Audio Features.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 from django.utils import timezone
 from django.db import transaction
@@ -265,19 +265,58 @@ def sync_user_recently_played_pipeline(user) -> dict:
 
     access_token = get_valid_access_token(profile)
 
-    # Tinh toan cursor timestamp milliseconds de toi uu payload
-    last_played = ListeningHistory.objects.filter(user=user).order_by('-played_at').values_list('played_at', flat=True).first()
-    after_ms = int(last_played.timestamp() * 1000) if last_played else None
+    now = timezone.now()
+    one_day_ago = now - timedelta(days=1)
+    last_played = (
+        ListeningHistory.objects.filter(user=user)
+        .order_by('-played_at')
+        .values_list('played_at', flat=True)
+        .first()
+    )
 
-    # Fetch va Ingest
-    payload = fetch_recently_played_from_api(access_token, after_ms=after_ms, limit=50)
-    ingest_result = ingest_recently_played_payload(user, payload)
+    total_scrobbled = 0
+    sync_mode = "latest_50"
 
-    # Dong bo Audio Features
-    features_synced_count = sync_audio_features_for_unsynced_tracks(access_token, limit=50)
+    # Neu co ban ghi cuoi cung trong DB va thuoc 1 ngay gan nhat: cap nhat tiep tu moc do
+    if last_played and last_played >= one_day_ago:
+        sync_mode = "from_last_played"
+        after_ms = int(last_played.timestamp() * 1000)
+        payload = fetch_recently_played_from_api(access_token, after_ms=after_ms, limit=50)
+        items = payload.get("items", [])
+
+        if items:
+            ingest_res = ingest_recently_played_payload(user, payload)
+            total_scrobbled += ingest_res.get("scrobbled_count", 0)
+
+            # Phan trang tiep neu Spotify con bai nghe sau moc do (toi da 3 trang de tranh rate limit)
+            page = 1
+            cursors = payload.get("cursors")
+            while cursors and cursors.get("after") and len(items) == 50 and page < 3:
+                next_after = int(cursors["after"])
+                next_payload = fetch_recently_played_from_api(access_token, after_ms=next_after, limit=50)
+                items = next_payload.get("items", [])
+                if not items:
+                    break
+                next_ingest = ingest_recently_played_payload(user, next_payload)
+                total_scrobbled += next_ingest.get("scrobbled_count", 0)
+                cursors = next_payload.get("cursors")
+                page += 1
+        else:
+            # Fallback kiem tra 50 bai gan nhat (khong after) de chong lech dong ho may chu
+            fallback_payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50)
+            fallback_ingest = ingest_recently_played_payload(user, fallback_payload)
+            total_scrobbled += fallback_ingest.get("scrobbled_count", 0)
+    else:
+        # Mac dinh lay 50 bai gan nhat (khi DB chua co hoac ban ghi cuoi da qua 1 ngay)
+        sync_mode = "latest_50"
+        payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50)
+        ingest_res = ingest_recently_played_payload(user, payload)
+        total_scrobbled += ingest_res.get("scrobbled_count", 0)
+
+    # Dong bo Audio Features cho cac bai hat chua co features (toi da 100 tracks)
+    features_synced_count = sync_audio_features_for_unsynced_tracks(access_token, limit=100)
 
     # Xoa cache thong ke cu de dam bao dashboard phan anh du lieu moi nhat
-    scrobbled_count = ingest_result.get("scrobbled_count", 0)
     try:
         from analytics.services.caching import invalidate_user_analytics_cache
         invalidate_user_analytics_cache(user.id)
@@ -290,7 +329,8 @@ def sync_user_recently_played_pipeline(user) -> dict:
 
     return {
         "status": "success",
-        "scrobbled_count": scrobbled_count,
+        "sync_mode": sync_mode,
+        "scrobbled_count": total_scrobbled,
         "features_synced_count": features_synced_count,
-        "last_synced_at": profile.last_synced_at.isoformat()
+        "last_synced_at": profile.last_synced_at.isoformat(),
     }

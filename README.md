@@ -9,11 +9,14 @@ Music Analytics Dashboard là nền tảng web toàn diện phục vụ việc t
 ### 1. Quản Lý Phiên & Xác Thực Spotify OAuth 2.0
 * Đăng nhập trực tiếp và bảo mật thông qua giao thức Spotify Authorization Code Flow.
 * Lưu trữ và mã hóa an toàn toàn bộ access token và refresh token bằng chuẩn mã hóa đối xứng AES-256 (Fernet) trong cơ sở dữ liệu.
+* Tự động kích hoạt đồng bộ nền (Instant Background Sync) lưu lịch sử nghe nhạc vào DB ngay khi đăng nhập thành công, không làm gián đoạn chuyển hướng trình duyệt.
 * Tự động làm mới phiên truy cập (Token Auto-Refresh) ngầm trước khi thực hiện các yêu cầu API, ngăn chặn gián đoạn trải nghiệm người dùng.
 
 ### 2. Đường Ống Thu Thập Dữ Liệu Tự Động (Auto-Scrobbling 24/7)
-* Bộ điều phối Celery Beat kết hợp Celery Worker thực hiện thu thập lịch sử nghe nhạc gần đây (Recently Played Tracks) theo định kỳ 15 phút.
-* Cơ chế lọc trùng lặp nghiêm ngặt (Deduplication Gate) thông qua ràng buộc cơ sở dữ liệu `UniqueConstraint(user, played_at)`, đảm bảo dữ liệu toàn vẹn tuyệt đối.
+* Bộ điều phối Celery Beat kết hợp Celery Worker thực hiện thu thập lịch sử nghe nhạc gần đây (Recently Played Tracks) theo định kỳ 15 phút, kèm cơ chế auto-sync định kỳ trên trình duyệt và nút đồng bộ thủ công tức thì.
+* Cơ chế lưu trữ bền vững tuyệt đối: Cấu hình cơ sở dữ liệu SQLite luôn sử dụng đường dẫn tuyệt đối cấp hệ thống, ngăn chặn triệt để hiện tượng phân tách dữ liệu khi khởi chạy server từ các thư mục khác nhau.
+* Cơ chế lấy dữ liệu thông minh theo mốc bài nghe cuối cùng: Tự động phát hiện bài hát gần nhất trong DB (`last_played`). Nếu bài hát thuộc 24 giờ qua, hệ thống bắt đầu kéo từ mốc thời gian đó (`after_ms`) kèm hỗ trợ phân trang tối đa 150 bài để thu thập trọn vẹn toàn bộ lượt nghe qua đêm; nếu chưa có bản ghi hoặc bản ghi đã quá 1 ngày, hệ thống mặc định lấy 50 bài gần nhất.
+* Cơ chế lọc trùng lặp nghiêm ngặt (Deduplication Gate) 2 tầng (bộ nhớ tạm và ràng buộc cơ sở dữ liệu `UniqueConstraint(user, played_at)` với `ignore_conflicts=True`), đảm bảo dữ liệu toàn vẹn tuyệt đối.
 * Cơ chế kiểm soát giới hạn tần suất yêu cầu (Rate Limit Handling): Tự động phát hiện mã lỗi HTTP 429 từ Spotify, bóc tách header `Retry-After` và áp dụng backoff exponential an toàn.
 
 ### 3. Bộ Điều Hướng Chu Kỳ Lịch Cố Định (Discrete Calendar Periods Navigator)
@@ -181,16 +184,17 @@ Dự án áp dụng bộ công cụ chẩn đoán đa tầng thông qua script t
 python .agents/skills/system-debug-verification/scripts/run_system_debug.py
 ```
 
-Quy trình tự động quét qua 15 tiêu chí kiểm định:
+Quy trình tự động quét qua 16 tiêu chí kiểm định thuộc 6 giai đoạn:
 1. Xác thực biến môi trường và bí mật bảo mật trong `backend/.env`.
 2. Kiểm tra tính hiện diện của `.env` trong `.gitignore`.
 3. Kiểm tra tính đầy đủ của 12 gói thư viện cốt lõi trong `.venv`.
 4. Chạy `manage.py check` phát hiện lỗi hệ thống Django.
 5. Kiểm tra tính toàn vẹn của migrations trong cơ sở dữ liệu.
-6. Chạy 41 bài kiểm thử tự động (Unit & Integration Tests) trên toàn bộ 5 Django apps.
-7. Kiểm tra cú pháp Frontend qua ESLint (0 errors, 0 warnings).
-8. Kiểm tra Type-check TypeScript và biên dịch Production Bundle qua Vite Build.
-9. Kích hoạt 6 Verification Gates của các Skill:
+6. Chạy 50 bài kiểm thử tự động (Unit, Integration & Contract Tests) trên toàn bộ hệ thống Backend.
+7. Kiểm tra khế ước truyền nhận dữ liệu Frontend - Backend (`tests_fe_be_contract.py`), xác thực tính tương thích 100% giữa TypeScript types và API responses.
+8. Kiểm tra cú pháp Frontend qua ESLint (0 errors, 0 warnings).
+9. Kiểm tra Type-check TypeScript và biên dịch Production Bundle qua Vite Build.
+10. Kích hoạt 6 Verification Gates của các Skill:
    * `spotify-auth-users`
    * `spotify-tracker-pipeline`
    * `music-analytics-engine`

@@ -28,6 +28,8 @@ __pycache__/
 *.sqlite3
 *.sqlite3-journal
 db.sqlite3
+*.merged_bak
+*.bak
 media/
 staticfiles/
 *.log
