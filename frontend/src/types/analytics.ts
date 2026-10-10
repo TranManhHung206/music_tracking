@@ -25,6 +25,15 @@ export interface TopArtist {
   play_count: number;
 }
 
+export interface TopAlbum {
+  spotify_id: string;
+  name: string;
+  image_url: string | null;
+  release_date?: string;
+  artists: string[];
+  play_count: number;
+}
+
 export interface AudioFeatureItem {
   attribute: string;
   score: number;
@@ -64,6 +73,31 @@ export interface TimelineFrame {
 export interface BarChartRaceData {
   metric: string;
   timeline: TimelineFrame[];
+}
+
+export interface DayComparison {
+  day_index: number;
+  day_name: string;
+  day_name_en: string;
+  current_week_plays: number;
+  previous_week_plays: number;
+  diff: number;
+}
+
+export interface WeeklyComparisonSummary {
+  total_current_week: number;
+  total_previous_week: number;
+  growth_percentage: number;
+  peak_day_current: string;
+  peak_plays_current: number;
+}
+
+export interface WeeklyComparisonData {
+  time_range: string;
+  current_week_label: string;
+  previous_week_label: string;
+  days: DayComparison[];
+  summary: WeeklyComparisonSummary;
 }
 
 export interface GenreItem {

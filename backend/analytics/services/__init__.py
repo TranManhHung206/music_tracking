@@ -11,9 +11,11 @@ from .calculations import (
     get_listening_summary,
     get_top_tracks,
     get_top_artists,
+    get_top_albums,
     get_radar_features,
     get_listening_heatmap,
     get_bar_chart_race,
+    get_weekly_comparison,
     get_genre_distribution,
 )
 
@@ -27,8 +29,10 @@ __all__ = [
     'get_listening_summary',
     'get_top_tracks',
     'get_top_artists',
+    'get_top_albums',
     'get_radar_features',
     'get_listening_heatmap',
     'get_bar_chart_race',
+    'get_weekly_comparison',
     'get_genre_distribution',
 ]

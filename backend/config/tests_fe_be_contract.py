@@ -204,6 +204,18 @@ class FrontendBackendContractTests(APITestCase):
         for f in ['spotify_id', 'name', 'play_count']:
             self.assertIn(f, a_item, f"Thieu truong '{f}' trong TopArtist")
 
+        # Top Albums
+        res_al = self.client.get('/api/analytics/top-albums/?time_range=30d&limit=5')
+        self.assertEqual(res_al.status_code, status.HTTP_200_OK)
+        al_data = res_al.json()
+        self.assertIn('albums', al_data)
+        al_list = al_data['albums']
+        self.assertIsInstance(al_list, list)
+        self.assertGreater(len(al_list), 0)
+        al_item = al_list[0]
+        for f in ['spotify_id', 'name', 'image_url', 'artists', 'play_count']:
+            self.assertIn(f, al_item, f"Thieu truong '{f}' trong TopAlbum")
+
     # -------------------------------------------------------------------------
     # 5. KIEM TRA DUONG TRUYEN RADAR, HEATMAP, BAR CHART RACE & GENRES
     # -------------------------------------------------------------------------
@@ -237,6 +249,19 @@ class FrontendBackendContractTests(APITestCase):
         race_data = res_race.json()
         self.assertIn('timeline', race_data)
         self.assertIsInstance(race_data['timeline'], list)
+
+        # Weekly Comparison
+        res_wc = self.client.get('/api/analytics/weekly-comparison/?time_range=7d')
+        self.assertEqual(res_wc.status_code, status.HTTP_200_OK)
+        wc_data = res_wc.json()
+        for f in ['current_week_label', 'previous_week_label', 'days', 'summary']:
+            self.assertIn(f, wc_data, f"Thieu truong '{f}' trong WeeklyComparisonData")
+        self.assertEqual(len(wc_data['days']), 7)
+        for d in wc_data['days']:
+            for df in ['day_index', 'day_name', 'current_week_plays', 'previous_week_plays', 'diff']:
+                self.assertIn(df, d)
+        for sf in ['total_current_week', 'total_previous_week', 'growth_percentage', 'peak_day_current', 'peak_plays_current']:
+            self.assertIn(sf, wc_data['summary'])
 
         # Genres
         res_genres = self.client.get('/api/analytics/genres/?time_range=30d')
@@ -311,7 +336,7 @@ class FrontendBackendContractTests(APITestCase):
         self.assertEqual(res_sum.json()['total_plays'], 0)
         self.assertEqual(res_sum.json()['total_hours'], 0.0)
 
-        # 2. Top Tracks & Artists
+        # 2. Top Tracks, Artists & Albums
         res_tracks = self.client.get('/api/analytics/top-tracks/?time_range=30d')
         self.assertEqual(res_tracks.status_code, status.HTTP_200_OK)
         self.assertEqual(res_tracks.json()['tracks'], [])
@@ -319,6 +344,17 @@ class FrontendBackendContractTests(APITestCase):
         res_artists = self.client.get('/api/analytics/top-artists/?time_range=30d')
         self.assertEqual(res_artists.status_code, status.HTTP_200_OK)
         self.assertEqual(res_artists.json()['artists'], [])
+
+        res_albums = self.client.get('/api/analytics/top-albums/?time_range=30d')
+        self.assertEqual(res_albums.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_albums.json()['albums'], [])
+
+        # 2b. Weekly Comparison
+        res_wc = self.client.get('/api/analytics/weekly-comparison/?time_range=7d')
+        self.assertEqual(res_wc.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_wc.json()['summary']['total_current_week'], 0)
+        self.assertEqual(res_wc.json()['summary']['total_previous_week'], 0)
+        self.assertEqual(len(res_wc.json()['days']), 7)
 
         # 3. Radar: Mac dinh diem dac trung [0.0, 1.0] de bieu do Radar khong bi sup ve 0 tren FE
         res_radar = self.client.get('/api/analytics/radar/?time_range=30d')
