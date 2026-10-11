@@ -50,10 +50,10 @@ export const TopTracksList: React.FC<TopTracksListProps> = ({ tracks, onFindSimi
               )}
 
               <div className="min-w-0">
-                <h4 className="text-sm font-semibold text-white truncate group-hover:text-[#1DB954] transition-colors">
+                <h4 className="text-sm font-semibold text-white truncate group-hover:text-[#1DB954] transition-colors leading-5">
                   {track.name}
                 </h4>
-                <p className="text-xs text-slate-400 truncate">
+                <p className="text-xs text-slate-400 truncate leading-4 mt-0.5">
                   {track.artists.join(', ')}
                 </p>
               </div>
@@ -61,10 +61,10 @@ export const TopTracksList: React.FC<TopTracksListProps> = ({ tracks, onFindSimi
 
             <div className="flex items-center space-x-3 shrink-0 ml-2">
               <div className="text-right">
-                <span className="text-xs font-mono font-bold text-white block">
+                <span className="text-xs font-mono font-bold text-[#1DB954] block leading-5">
                   {track.play_count}
                 </span>
-                <span className="text-[10px] text-slate-500 uppercase">lượt nghe</span>
+                <span className="text-[10px] text-slate-500 uppercase block leading-4 mt-0.5">lượt nghe</span>
               </div>
 
               <button

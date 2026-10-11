@@ -49,18 +49,18 @@ export const TopArtistsList: React.FC<TopArtistsListProps> = ({ artists }) => {
                 )}
 
                 <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-white truncate group-hover:text-[#1DB954] transition-colors">
+                  <h4 className="text-sm font-semibold text-white truncate group-hover:text-[#1DB954] transition-colors leading-5">
                     {artist.name}
                   </h4>
-                  <span className="text-[11px] text-slate-500">Nghệ sĩ chính</span>
+                  <span className="text-[11px] text-slate-500 block leading-4 mt-0.5">Nghệ sĩ chính</span>
                 </div>
               </div>
 
               <div className="text-right shrink-0">
-                <span className="text-xs font-mono font-bold text-[#1DB954] block">
+                <span className="text-xs font-mono font-bold text-[#1DB954] block leading-5">
                   {artist.play_count}
                 </span>
-                <span className="text-[10px] text-slate-500 uppercase">lượt nghe</span>
+                <span className="text-[10px] text-slate-500 uppercase block leading-4 mt-0.5">lượt nghe</span>
               </div>
             </div>
           ))}

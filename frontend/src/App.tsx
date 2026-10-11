@@ -628,6 +628,39 @@ export function App() {
         period={selectedPeriod ? selectedPeriod.label : 'Kỳ thống kê'}
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
+        totalPlays={summary.total_plays}
+        totalHours={summary.total_hours}
+        topGenre={genreData.genres[0]?.name}
+        topTrack={
+          topTracks[0]
+            ? {
+                name: topTracks[0].name,
+                artist: Array.isArray(topTracks[0].artists)
+                  ? topTracks[0].artists.join(', ')
+                  : 'Nghệ sĩ',
+                playCount: topTracks[0].play_count,
+              }
+            : undefined
+        }
+        topArtist={
+          topArtists[0]
+            ? {
+                name: topArtists[0].name,
+                playCount: topArtists[0].play_count,
+              }
+            : undefined
+        }
+        topAlbum={
+          topAlbums[0]
+            ? {
+                name: topAlbums[0].name,
+                artist: Array.isArray(topAlbums[0].artists)
+                  ? topAlbums[0].artists.join(', ')
+                  : 'Nhiều nghệ sĩ',
+                playCount: topAlbums[0].play_count,
+              }
+            : undefined
+        }
       />
 
       {/* Modal Goi Y Bai Hat KNN */}

@@ -12,6 +12,7 @@ from tracker.services.ingestion import (
     parse_iso_datetime,
     ingest_recently_played_payload,
     sync_audio_features_for_unsynced_tracks,
+    sync_artist_images_from_spotify,
 )
 from tracker.tasks import scheduled_scrobble_all_users
 
@@ -129,6 +130,22 @@ class IngestionServiceTest(TestCase):
             self.assertTrue(track.features_synced)
             self.assertEqual(track.danceability, 0.75)
             self.assertEqual(track.tempo, 128.5)
+
+    def test_sync_artist_images_from_spotify(self):
+        artist = Artist.objects.create(spotify_id="art_sync_1", name="Artist Sync Test", image_url=None)
+        mock_artist_data = {
+            "id": "art_sync_1",
+            "name": "Artist Sync Test",
+            "images": [{"url": "https://i.scdn.co/image/test_art_sync_img"}],
+            "genres": ["indie pop", "v-pop"]
+        }
+        with patch('tracker.services.ingestion.get_valid_access_token', return_value="mock_token"), \
+             patch('tracker.services.ingestion.fetch_artist_from_spotify_api', return_value=mock_artist_data):
+            res = sync_artist_images_from_spotify(user=self.user, force=True)
+            self.assertEqual(res["updated_count"], 1)
+            artist.refresh_from_db()
+            self.assertEqual(artist.image_url, "https://i.scdn.co/image/test_art_sync_img")
+            self.assertEqual(artist.genres, ["indie pop", "v-pop"])
 
 class CeleryTasksTest(TestCase):
     def setUp(self):

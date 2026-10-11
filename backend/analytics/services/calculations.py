@@ -151,6 +151,10 @@ VPOP_KEYWORDS = [
     "rap viet", "chuyện rằng", "lời tạm biệt", "người hay nói"
 ]
 
+VPOP_EDM_ARTISTS = {
+    "hoaprox", "masew", "touliver", "slimv", "triple d", "k-icm"
+}
+
 EDM_ARTISTS = {
     "thefatrat", "alan walker", "lost sky", "arc north", "mountkid", "tokyo machine",
     "k-391", "ahrix", "robin hustin", "tobimorrow", "jex", "marshmello", "martin garrix",
@@ -260,10 +264,10 @@ def is_artist_match(artist_name_lower: str, target_name: str) -> bool:
     pattern = r'\b' + re.escape(target_name.lower()) + r'\b'
     return bool(re.search(pattern, artist_name_lower))
 
-def classify_artist_genres(artist_name: str, track_name: str = "", artists: list = None) -> str:
+def classify_artist_genres(artist_name: str, track_name: str = "", artists: list = None, track = None) -> str:
     """
-    Phan loai the loai am nhac dua tren ten tat ca nghe si va tieu de bai hat.
-    Uu tien nhan dien tieng Viet co dau, danh sach nghe si V-Pop, K-Pop, EDM, US-UK va Russian Pop.
+    Phan loai the loai am nhac lai (Hybrid Genre Classification) ket hop giua
+    sieu du lieu (Metadata: ten nghe si, ngon ngu) va dac trung song am (Audio DSP Features).
     """
     ensure_custom_artists_loaded()
     title = track_name or ""
@@ -276,6 +280,12 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     else:
         artist_names_lower = []
 
+    # Lay cac chi so Audio DSP tu ban ghi Track neu co
+    energy = getattr(track, 'energy', 0.0) if track else 0.0
+    acousticness = getattr(track, 'acousticness', 0.0) if track else 0.0
+    danceability = getattr(track, 'danceability', 0.0) if track else 0.0
+    tempo = getattr(track, 'tempo', 0.0) if track else 0.0
+
     # 1. Kiem tra K-Pop ro rang (vd: Rose co dau sac nhung la K-Pop)
     is_kpop_artist = any(
         any(is_artist_match(a_name, kp) for kp in KPOP_ARTISTS) for a_name in artist_names_lower
@@ -283,7 +293,11 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     if is_kpop_artist:
         return "K-Pop"
 
-    # 2. Tieng Viet: co dau hoac thuoc danh sach V-Pop / tu khoa V-Pop
+    # 2. Cyrillic (Nga / Dong Au)
+    if CYRILLIC_REGEX.search(title) or any(CYRILLIC_REGEX.search(a_name) for a_name in artist_names_lower):
+        return "Russian / CIS Pop"
+
+    # 3. Kiem tra nhom am nhac Viet Nam (Metadata)
     has_viet_accent = bool(VIETNAMESE_DIACRITICS_REGEX.search(title)) or any(
         bool(VIETNAMESE_DIACRITICS_REGEX.search(a_name)) for a_name in artist_names_lower
     )
@@ -291,32 +305,46 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
         any(is_artist_match(a_name, vp) for vp in VPOP_ARTISTS) for a_name in artist_names_lower
     )
     has_vpop_kw = any(kw in title_lower for kw in VPOP_KEYWORDS)
+    is_vietnamese = has_viet_accent or is_vpop_artist or has_vpop_kw
 
-    if has_viet_accent or is_vpop_artist or has_vpop_kw:
-        return "V-Pop"
-
-    # 3. Cyrillic (Nga / Dong Au)
-    if CYRILLIC_REGEX.search(title) or any(CYRILLIC_REGEX.search(a_name) for a_name in artist_names_lower):
-        return "Russian / CIS Pop"
-
-    # 4. Phonk / Electronic
-    if "montagem" in title_lower or "phonk" in title_lower:
-        return "Phonk / Electronic"
-
-    # 5. EDM / Electronic
+    # Kiem tra dau hieu EDM / Electronic chung
     is_edm_artist = any(any(is_artist_match(a_name, ea) for ea in EDM_ARTISTS) for a_name in artist_names_lower)
-    is_edm_title = any(k in title_lower for k in ["remix", "radio edit", "dubstep", "bass", "club mix"])
-    if is_edm_artist or is_edm_title:
+    is_edm_title = any(k in title_lower for k in ["remix", "radio edit", "dubstep", "bass", "club mix", "prod."])
+
+    if is_vietnamese:
+        # Nhom V-Pop phan nhanh chi tiet bang dac trung song am DSP
+        is_vpop_edm_artist = any(
+            any(is_artist_match(a_name, ea) for ea in VPOP_EDM_ARTISTS) for a_name in artist_names_lower
+        )
+        is_vpop_remix = (
+            any(k in title_lower for k in ["remix", "vinahouse", "dubstep", "club mix"])
+            and not any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"])
+        )
+        is_vpop_edm_dsp = (energy >= 0.85 and tempo >= 128 and acousticness <= 0.25 and danceability >= 0.65)
+        if is_vpop_edm_artist or is_vpop_remix or is_vpop_edm_dsp:
+            return "V-Pop (Electronic / Dance)"
+        if acousticness >= 0.50 or (energy <= 0.48 and danceability <= 0.55) or any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"]):
+            return "V-Pop (Acoustic / Indie)"
+        if danceability >= 0.68 or any(a in ["low g", "pháp kiều", "phap kieu", "hieuthuhai", "wren evans", "binz", "freaky"] for a in artist_names_lower):
+            return "V-Pop (R&B / Hip-Hop)"
+        return "V-Pop (Modern Pop)"
+
+    # 4. Nhom Quoc te / Au My phan nhanh chi tiet bang dac trung song am DSP
+    if is_edm_artist or is_edm_title or (energy >= 0.78 and acousticness <= 0.35):
         return "EDM / Electronic"
 
-    # 6. US-UK / Pop
+    if "montagem" in title_lower or "phonk" in title_lower or (energy >= 0.90 and tempo >= 135):
+        return "Phonk / High Energy"
+
+    if acousticness >= 0.60 or (energy <= 0.45 and tempo <= 100) or any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"]):
+        return "Acoustic / Lo-Fi"
+
+    if danceability >= 0.75 or any(a in ["snoop dogg", "a$ap rocky", "eminem", "drake"] for a in artist_names_lower):
+        return "Hip-Hop / Rap"
+
     is_usuk_artist = any(any(is_artist_match(a_name, ua) for ua in USUK_ARTISTS) for a_name in artist_names_lower)
     if is_usuk_artist:
         return "US-UK / Pop"
-
-    # 7. Acoustic / Lo-Fi
-    if any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"]):
-        return "Acoustic / Lo-Fi"
 
     return "Global Pop"
 
@@ -331,13 +359,17 @@ def get_genre_distribution(user, start_dt, end_dt) -> dict:
 
     genre_counts = {}
     genre_colors = {
-        "V-Pop": "#EC4899",
+        "V-Pop (Electronic / Dance)": "#A855F7",
+        "V-Pop (Acoustic / Indie)": "#10B981",
         "EDM / Electronic": "#1DB954",
+        "Acoustic / Lo-Fi": "#14B8A6",
+        "Phonk / High Energy": "#E11D48",
+        "V-Pop (R&B / Hip-Hop)": "#F59E0B",
+        "V-Pop (Modern Pop)": "#EC4899",
         "US-UK / Pop": "#3B82F6",
-        "K-Pop": "#F59E0B",
+        "Hip-Hop / Rap": "#F97316",
+        "K-Pop": "#FBBF24",
         "Russian / CIS Pop": "#8B5CF6",
-        "Phonk / Electronic": "#E11D48",
-        "Acoustic / Lo-Fi": "#10B981",
         "Global Pop": "#06B6D4",
     }
 
@@ -348,7 +380,7 @@ def get_genre_distribution(user, start_dt, end_dt) -> dict:
         artist_names = [a.name for a in artists]
         art_name = artist_names[0] if artist_names else ""
         trk_name = t.name if t else ""
-        genre = classify_artist_genres(art_name, trk_name, artists=artist_names)
+        genre = classify_artist_genres(art_name, trk_name, artists=artist_names, track=t)
         genre_counts[genre] = genre_counts.get(genre, 0) + 1
         total_plays += 1
 

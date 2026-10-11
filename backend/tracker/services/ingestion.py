@@ -4,6 +4,7 @@ Cung cap logic thu thap Recently Played tu Spotify API, deduplication 2 tang, va
 """
 
 from datetime import datetime, timedelta
+import time
 import requests
 from django.utils import timezone
 from django.db import transaction
@@ -13,6 +14,7 @@ from tracker.models import Artist, Album, Track, ListeningHistory
 
 SPOTIFY_RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
 SPOTIFY_AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features"
+SPOTIFY_ARTIST_URL = "https://api.spotify.com/v1/artists"
 
 def parse_iso_datetime(iso_str: str) -> datetime:
     """Chuyen doi chuoi ISO 8601 tu Spotify ve datetime object co timezone."""
@@ -53,6 +55,89 @@ def fetch_audio_features_from_api(access_token: str, track_spotify_ids: list[str
 
     data = response.json()
     return [item for item in data.get("audio_features", []) if item is not None]
+
+def fetch_artist_from_spotify_api(access_token: str, artist_spotify_id: str, profile=None) -> dict | None:
+    """Goi API Spotify de lay thong tin chi tiet mot nghe si qua ID rieng."""
+    if not artist_spotify_id:
+        return None
+    url = f"{SPOTIFY_ARTIST_URL}/{artist_spotify_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    session = get_spotify_session()
+    try:
+        response = session.get(url, headers=headers, timeout=(10, 15))
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", "5"))
+            time.sleep(retry_after)
+            response = session.get(url, headers=headers, timeout=(10, 15))
+        elif response.status_code == 401 and profile:
+            new_token = get_valid_access_token(profile)
+            headers = {"Authorization": f"Bearer {new_token}"}
+            response = session.get(url, headers=headers, timeout=(10, 15))
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
+def sync_artist_images_from_spotify(user=None, limit: int = None, force: bool = False) -> dict:
+    """Dong bo avatar chinh chu tu Spotify Web API cho cac nghe si theo spotify_id."""
+    from users.models import User
+
+    if user is None:
+        user = User.objects.filter(spotify_profile__isnull=False, spotify_profile__is_sync_active=True).first()
+        if not user:
+            user = User.objects.filter(spotify_profile__isnull=False).first()
+
+    if not user or not hasattr(user, 'spotify_profile') or not user.spotify_profile:
+        return {"total_checked": 0, "updated_count": 0, "skipped_count": 0, "error": "Khong tim thay profile Spotify"}
+
+    profile = user.spotify_profile
+    access_token = get_valid_access_token(profile)
+
+    qs = Artist.objects.filter(spotify_id__isnull=False).exclude(spotify_id='')
+    if not force:
+        qs = qs.exclude(image_url__startswith='https://i.scdn.co')
+
+    if limit:
+        qs = qs[:limit]
+
+    artists_to_sync = list(qs)
+    updated_count = 0
+    skipped_count = 0
+
+    for artist in artists_to_sync:
+        data = fetch_artist_from_spotify_api(access_token, artist.spotify_id, profile=profile)
+        if data:
+            images = data.get("images", [])
+            genres = data.get("genres", [])
+            fields_to_update = []
+            if images and images[0].get("url"):
+                artist.image_url = images[0]["url"]
+                fields_to_update.append("image_url")
+            if genres and not artist.genres:
+                artist.genres = genres
+                fields_to_update.append("genres")
+            if fields_to_update:
+                artist.save(update_fields=fields_to_update)
+                updated_count += 1
+            else:
+                skipped_count += 1
+        else:
+            skipped_count += 1
+        time.sleep(0.05)
+
+    if updated_count > 0:
+        try:
+            from analytics.services.caching import invalidate_user_analytics_cache
+            invalidate_user_analytics_cache(user.id)
+        except Exception:
+            pass
+
+    return {
+        "total_checked": len(artists_to_sync),
+        "updated_count": updated_count,
+        "skipped_count": skipped_count
+    }
 
 def ingest_recently_played_payload(user, payload: dict) -> dict:
     """Xu ly du lieu payload tu Spotify: phan tach thuc the, deduplicate va bulk_create vao DB."""
@@ -242,17 +327,11 @@ def sync_audio_features_for_unsynced_tracks(access_token: str, limit: int = 50) 
             t.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced"])
             updated_count += 1
 
-    # Neu Spotify tra ve 403 hoac rong, tu dong ap dung heuristic uoc luong thong minh
+    # Neu Spotify tra ve 403 hoac rong, tu dong ap dung Audio DSP trich xuat song am 30s va dong bo anh HD
+    from tracker.services.audio_dsp import enrich_track_with_dsp_and_artwork
     for sp_id, t in track_id_map.items():
         if sp_id not in fetched_ids:
-            estimated = estimate_track_audio_features(t)
-            t.danceability = estimated["danceability"]
-            t.energy = estimated["energy"]
-            t.valence = estimated["valence"]
-            t.acousticness = estimated["acousticness"]
-            t.tempo = estimated["tempo"]
-            t.features_synced = True
-            t.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced"])
+            enrich_track_with_dsp_and_artwork(t, sync_artist_image=True)
             updated_count += 1
 
     return updated_count
@@ -315,6 +394,9 @@ def sync_user_recently_played_pipeline(user) -> dict:
 
     # Dong bo Audio Features cho cac bai hat chua co features (toi da 100 tracks)
     features_synced_count = sync_audio_features_for_unsynced_tracks(access_token, limit=100)
+
+    # Dong bo avatar chinh chu tu Spotify cho cac nghe si moi chua co anh (toi da 20 artists)
+    sync_artist_images_from_spotify(user=user, limit=20, force=False)
 
     # Xoa cache thong ke cu de dam bao dashboard phan anh du lieu moi nhat
     try:
