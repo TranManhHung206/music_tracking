@@ -12,10 +12,11 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Hỗ trợ nút bấm đồng bộ tức thì và cơ chế tự động lấy tiếp các bài hát vừa nghe.
 
 ### 2. Bảng Điều Khiển Phân Tích Trực Quan
-* Biểu đồ Radar Đặc tính Âm thanh: Phân tích các chỉ số năng lượng, độ bắt tai, độ mộc, tâm trạng và nhịp độ của bài hát.
+* Biểu đồ Radar Đặc tính Âm thanh: Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc chuẩn xác BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát.
 * Bản đồ Nhiệt 24x7: Trực quan hóa mật độ nghe nhạc theo từng khung giờ trong ngày và từng ngày trong tuần.
 * So Sánh Lượt Nghe Theo Tuần: Biểu đồ cột trực quan so sánh số lượt nghe mỗi ngày giữa tuần này và tuần trước kèm thông số tăng trưởng.
-* Bảng Xếp Hạng Toàn Diện: Theo dõi Top Bài Hát, Top Nghệ Sĩ và Top Album được nghe nhiều nhất.
+* Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification): Kết hợp thông minh giữa siêu dữ liệu ngôn ngữ/vùng miền và 5 chỉ số sóng âm thanh DSP để bóc tách chính xác các dòng nhạc (V-Pop Acoustic/Indie, V-Pop Electronic/Dance, EDM, Phonk, Lo-Fi, Hip-Hop...).
+* Bảng Xếp Hạng Toàn Diện: Theo dõi Top Bài Hát, Top Nghệ Sĩ (đồng bộ ảnh chân dung chính chủ từ Spotify Web API theo mã định danh spotify_id riêng biệt) và Top Album được nghe nhiều nhất.
 * Nhật Ký Nghe Gần Đây: Xem danh sách chi tiết các lượt nghe mới nhất với đầy đủ ảnh bìa và thông tin bài hát.
 
 ### 3. Bộ Lọc Chu Kỳ Thời Gian Cố Định
@@ -130,3 +131,18 @@ Nếu bạn muốn hệ thống tự động cào dữ liệu định kỳ 24/7 
    cd backend
    celery -A config beat -l info
    ```
+
+### Bước 6: Các Lệnh Quản Trị & Đồng Bộ Dữ Liệu Chuyên Sâu
+
+Hệ thống hỗ trợ các lệnh quản trị chạy ngầm giúp làm mới hoặc nâng cấp dữ liệu:
+
+1. Đồng bộ ảnh chân dung đại diện chính chủ từ Spotify Web API theo mã định danh `spotify_id` riêng biệt của từng nghệ sĩ:
+   ```powershell
+   python backend/manage.py sync_spotify_artist_images
+   ```
+
+2. Phân tích sóng âm thanh 30 giây (DSP Engine) bằng `librosa` để nâng cấp chỉ số âm thanh thực tế cho toàn bộ bài hát:
+   ```powershell
+   python backend/manage.py enrich_existing_tracks
+   ```
+

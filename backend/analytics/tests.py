@@ -269,3 +269,52 @@ class CalendarPeriodsTests(AnalyticsBaseTestCase):
         response = self.client.get('/api/analytics/periods/')
         self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
 
+class HybridGenreClassificationTests(AnalyticsBaseTestCase):
+    """Kiem thu he thong phan loai the loai am nhac lai Hybrid Genre Classifier."""
+
+    def test_hybrid_genre_classification_logic(self):
+        from analytics.services.calculations import classify_artist_genres
+
+        # 1. Bai hat Viet Nam Acoustic / Indie
+        track_acoustic = Track(name='Tự', energy=0.40, acousticness=0.85, danceability=0.45, tempo=85.0)
+        genre_ac = classify_artist_genres('Thịnh Suy', 'Tự', artists=['Thịnh Suy'], track=track_acoustic)
+        self.assertEqual(genre_ac, 'V-Pop (Acoustic / Indie)')
+
+        track_sivan = Track(name='Để Dành Khi Thức Giấc', energy=0.69, acousticness=0.85, danceability=0.49, tempo=129.0)
+        genre_sivan = classify_artist_genres('SIVAN', 'Để Dành Khi Thức Giấc', artists=['SIVAN'], track=track_sivan)
+        self.assertEqual(genre_sivan, 'V-Pop (Acoustic / Indie)')
+
+        # 2. Bai hat Viet Nam Electronic / Dance
+        track_dance = Track(name='Ngẫu Hứng', energy=0.88, acousticness=0.15, danceability=0.75, tempo=130.0)
+        genre_ed = classify_artist_genres('Hoaprox', 'Ngẫu Hứng', artists=['Hoaprox'], track=track_dance)
+        self.assertEqual(genre_ed, 'V-Pop (Electronic / Dance)')
+
+        # 3. Bai hat Quoc te EDM / Electronic
+        track_edm = Track(name='Faded', energy=0.85, acousticness=0.10, danceability=0.60, tempo=126.0)
+        genre_edm = classify_artist_genres('Alan Walker', 'Faded', artists=['Alan Walker'], track=track_edm)
+        self.assertEqual(genre_edm, 'EDM / Electronic')
+
+        # 4. Bai hat Quoc te Acoustic / Lo-Fi
+        track_lofi = Track(name='double take', energy=0.35, acousticness=0.75, danceability=0.40, tempo=90.0)
+        genre_lofi = classify_artist_genres('Dhruv', 'double take', artists=['Dhruv'], track=track_lofi)
+        self.assertEqual(genre_lofi, 'Acoustic / Lo-Fi')
+
+    def test_genre_distribution_api_endpoint(self):
+        url = '/api/analytics/genres/?time_range=30d'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertIn('genres', data)
+        self.assertIn('total_plays', data)
+        self.assertIn('top_genre', data)
+        self.assertGreater(data['total_plays'], 0)
+        self.assertIsInstance(data['genres'], list)
+        self.assertGreater(len(data['genres']), 0)
+        for g in data['genres']:
+            self.assertIn('name', g)
+            self.assertIn('plays', g)
+            self.assertIn('percentage', g)
+            self.assertIn('color', g)
+            self.assertTrue(g['color'].startswith('#'))
+
