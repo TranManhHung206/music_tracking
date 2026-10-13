@@ -15,7 +15,7 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Biểu đồ Radar Đặc tính Âm thanh: Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc chuẩn xác BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát.
 * Bản đồ Nhiệt 24x7: Trực quan hóa mật độ nghe nhạc theo từng khung giờ trong ngày và từng ngày trong tuần.
 * So Sánh Lượt Nghe Theo Tuần: Biểu đồ cột trực quan so sánh số lượt nghe mỗi ngày giữa tuần này và tuần trước kèm thông số tăng trưởng.
-* Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification): Kết hợp thông minh giữa siêu dữ liệu ngôn ngữ/vùng miền và 5 chỉ số sóng âm thanh DSP để bóc tách chính xác các dòng nhạc (V-Pop Acoustic/Indie, V-Pop Electronic/Dance, EDM, Phonk, Lo-Fi, Hip-Hop...).
+* Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification): Kết hợp thông minh giữa nhận diện khu vực địa phương (hợp nhất chuẩn hóa V-Pop, K-Pop) và phân loại chuyên sâu bằng chỉ số sóng âm thanh DSP đối với các dòng nhạc quốc tế (EDM / Electronic, Phonk / High Energy, Acoustic / Lo-Fi, Hip-Hop / Rap, US-UK / Pop, Global Pop).
 * Bảng Xếp Hạng Toàn Diện: Theo dõi Top Bài Hát, Top Nghệ Sĩ (đồng bộ ảnh chân dung chính chủ từ Spotify Web API theo mã định danh spotify_id riêng biệt) và Top Album được nghe nhiều nhất.
 * Nhật Ký Nghe Gần Đây: Xem danh sách chi tiết các lượt nghe mới nhất với đầy đủ ảnh bìa và thông tin bài hát.
 
@@ -24,14 +24,16 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Danh sách chu kỳ được sắp xếp trực quan từ hiện tại trở về quá khứ, kèm tổng số lượt nghe thực tế trên từng chu kỳ.
 * Tự động thông báo khi xem các chu kỳ trong quá khứ chưa có dữ liệu kèm nút quay về kỳ hiện tại.
 
-### 4. AI Music Persona & Gợi Ý Bài Hát
+### 4. AI Music Persona & Agentic AI Thám Tử Âm Nhạc
 * Hồ sơ Tính cách Âm nhạc AI: Tích hợp mô hình AI (Groq hoặc Google Gemini) để phân tích tâm lý, cảm xúc nghe nhạc, khung giờ thưởng thức lý tưởng và lời khuyên âm nhạc dành riêng cho bạn.
+* Thám Tử Âm Nhạc Agentic AI (Aura Music Detective): Tích hợp Groq Function Calling (chu trình ReAct: Thought - Tool Call - Synthesis) kết hợp bộ khung điều khiển Harness an toàn. Agent tự động gọi các công cụ truy vấn cơ sở dữ liệu để tìm kiếm các sự thật âm nhạc bất ngờ (cày lặp bài hát, thói quen cú đêm, phiên nghe marathon, độ trung thành nghệ sĩ, cú nhảy năng lượng đột ngột) kèm số liệu và bằng chứng thực tế.
 * Gợi ý Bài hát Thông minh: Sử dụng thuật toán Machine Learning (KNN) để tìm kiếm và đề xuất các bài hát có giai điệu, phong cách tương đồng nhất với sở thích của bạn.
+
 
 ### 5. Giao Diện Obsidian Dark Mode & Chia Sẻ Mạng Xã Hội
 * Giao diện tối Obsidian hiện đại, phù hợp với phong cách âm nhạc và tôn mắt khi xem vào ban đêm.
 * Chế độ Xem thử (Demo Mode): Trải nghiệm đầy đủ mọi tính năng với dữ liệu mẫu ngay cả khi chưa kết nối tài khoản Spotify.
-* Xuất Thẻ Chia Sẻ: Tạo thẻ ảnh tổng kết gu âm nhạc chuẩn tỉ lệ Story 9:16 sắc nét để chia sẻ lên mạng xã hội.
+* Xuất Thẻ Chia Sẻ Đa Tỷ Lệ: Tạo thẻ ảnh tổng kết gu âm nhạc và AI Persona độ phân giải cao 2x với 4 tỷ lệ chuẩn mạng xã hội (Story 9:16, Dọc Chân dung 4:5, Vuông Post 1:1, Ngang Banner 16:9). Tích hợp ảnh bìa album và chân dung nghệ sĩ thật từ Spotify, tối ưu bố cục cân đối và phòng vệ lỗi hiển thị.
 
 ---
 

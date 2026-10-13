@@ -15,7 +15,7 @@ import type {
   CalendarPeriodType,
   CalendarPeriodItem,
 } from '../types/analytics';
-import type { AIMusicPersona, RecommendationResult } from '../types/ai';
+import type { AIMusicPersona, RecommendationResult, MusicFactsResponse } from '../types/ai';
 
 export type TimeFilterInput = TimeRange | { time_range?: string; start_date?: string; end_date?: string };
 
@@ -417,23 +417,89 @@ export const MOCK_LISTENING_HISTORY: ListeningHistoryRecord[] = [
   },
 ];
 
-export const MOCK_CALENDAR_PERIODS: Record<CalendarPeriodType, CalendarPeriodItem[]> = {
-  week: [
-    { key: '2026-W41', label: 'Tuần này', start_date: '2026-10-05', end_date: '2026-10-11', is_current: true, play_count: 222 },
-    { key: '2026-W40', label: 'Tuần 40', start_date: '2026-09-28', end_date: '2026-10-04', is_current: false, play_count: 0 },
-    { key: '2026-W39', label: 'Tuần 39', start_date: '2026-09-21', end_date: '2026-09-27', is_current: false, play_count: 0 },
-  ],
-  month: [
-    { key: '2026-10', label: 'Tháng 10/2026', start_date: '2026-10-01', end_date: '2026-10-31', is_current: true, play_count: 222 },
-    { key: '2026-09', label: 'Tháng 09/2026', start_date: '2026-09-01', end_date: '2026-09-30', is_current: false, play_count: 0 },
-    { key: '2026-08', label: 'Tháng 08/2026', start_date: '2026-08-01', end_date: '2026-08-31', is_current: false, play_count: 0 },
-  ],
-  year: [
-    { key: '2026', label: 'Năm 2026', start_date: '2026-01-01', end_date: '2026-12-31', is_current: true, play_count: 222 },
-    { key: '2025', label: 'Năm 2025', start_date: '2025-01-01', end_date: '2025-12-31', is_current: false, play_count: 0 },
-    { key: '2024', label: 'Năm 2024', start_date: '2024-01-01', end_date: '2024-12-31', is_current: false, play_count: 0 },
-  ],
-};
+function formatISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getISOWeekDetails(date: Date): { year: number; week: number } {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { year: d.getUTCFullYear(), week: weekNo };
+}
+
+// Sinh danh sach ky thoi gian mau tu dong theo thoi gian thuc
+export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, CalendarPeriodItem[]> {
+  const now = new Date();
+
+  // 1. Tuan (ISO Week)
+  const day = (now.getDay() + 6) % 7;
+  const currMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+  const weeks: CalendarPeriodItem[] = [];
+
+  for (let i = 0; i < 3; i++) {
+    const mon = new Date(currMonday.getFullYear(), currMonday.getMonth(), currMonday.getDate() - i * 7);
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+    const { year: isoY, week: isoW } = getISOWeekDetails(mon);
+    const isCurr = i === 0;
+
+    weeks.push({
+      key: `${isoY}-W${String(isoW).padStart(2, '0')}`,
+      label: isCurr ? 'Tuần này' : `Tuần ${isoW}`,
+      start_date: formatISODate(mon),
+      end_date: formatISODate(sun),
+      is_current: isCurr,
+      play_count: isCurr ? 222 : 0,
+    });
+  }
+
+  // 2. Thang
+  const months: CalendarPeriodItem[] = [];
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const lastDay = new Date(y, m, 0).getDate();
+    const isCurr = i === 0;
+    const mStr = String(m).padStart(2, '0');
+
+    months.push({
+      key: `${y}-${mStr}`,
+      label: `Tháng ${mStr}/${y}`,
+      start_date: `${y}-${mStr}-01`,
+      end_date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+      is_current: isCurr,
+      play_count: isCurr ? 222 : 0,
+    });
+  }
+
+  // 3. Nam
+  const years: CalendarPeriodItem[] = [];
+  const currYear = now.getFullYear();
+  for (let i = 0; i < 3; i++) {
+    const y = currYear - i;
+    const isCurr = i === 0;
+
+    years.push({
+      key: `${y}`,
+      label: `Năm ${y}`,
+      start_date: `${y}-01-01`,
+      end_date: `${y}-12-31`,
+      is_current: isCurr,
+      play_count: isCurr ? 222 : 0,
+    });
+  }
+
+  return { week: weeks, month: months, year: years };
+}
+
+export const MOCK_CALENDAR_PERIODS: Record<CalendarPeriodType, CalendarPeriodItem[]> = getDynamicMockCalendarPeriods();
+
 
 // API Services voi Graceful Fallback sang Mock Data
 export const api = {
@@ -650,4 +716,57 @@ export const api = {
       };
     }
   },
+
+  async getMusicFacts(period: string = 'week', forceRefresh: boolean = false): Promise<MusicFactsResponse> {
+    try {
+      const refreshParam = forceRefresh ? '&refresh=true' : '';
+      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}`);
+      return res.data;
+    } catch {
+      return MOCK_MUSIC_FACTS;
+    }
+  },
 };
+
+export const MOCK_MUSIC_FACTS: MusicFactsResponse = {
+  facts: [
+    {
+      id: 'fact-1',
+      category: 'repeat_loop',
+      badge: 'Vòng Lặp Vô Tận',
+      title: 'Cơn Nghiện Astral Projection',
+      description: 'Bạn đã bấm nghe liên tiếp bản nhạc này 7 lần chỉ trong một ngày mà không hề chuyển bài.',
+      metric_highlight: '7 lần / ngày',
+      evidence: 'Hallmore - Astral Projection (Thứ Tư)',
+    },
+    {
+      id: 'fact-2',
+      category: 'artist_dominance',
+      badge: 'Độ Trung Thành Tuyệt Đối',
+      title: 'Vùng An Toàn Cùng Alan Walker',
+      description: 'Alan Walker chiếm tới 46.8% toàn bộ thời lượng nghe nhạc của bạn trong suốt kỳ này.',
+      metric_highlight: '46.8% thời lượng',
+      evidence: '58 lượt nghe trên tổng số 124 lượt',
+    },
+    {
+      id: 'fact-3',
+      category: 'marathon',
+      badge: 'Kỷ Lục Marathon',
+      title: 'Phiên Nghe Bất Tận Chiều Cuối Tuần',
+      description: 'Bạn đã đắm chìm trong âm nhạc suốt 3.8 giờ liên tục với 45 bài hát không hề gián đoạn.',
+      metric_highlight: '3.8 giờ liên tục',
+      evidence: '14:30 - 18:18 Ngày Chủ Nhật',
+    },
+  ],
+  agent_meta: {
+    agent_name: 'Aura Music Detective',
+    provider_used: 'groq',
+    model_name: 'openai/gpt-oss-120b',
+    iterations_used: 2,
+    tools_called: ['query_repeat_loops', 'query_artist_dominance'],
+    is_fallback: false,
+  },
+  period_key: 'week',
+  period_label: 'Tuần này',
+};
+

@@ -33,3 +33,21 @@ class GeneratePersonaRequestSerializer(serializers.Serializer):
         default='monthly',
         required=False,
     )
+
+class MusicFactItemSerializer(serializers.Serializer):
+    """Serializer cho tung su that am nhac do Agent phat hien."""
+    id = serializers.CharField()
+    category = serializers.CharField()
+    badge = serializers.CharField()
+    title = serializers.CharField()
+    description = serializers.CharField()
+    metric_highlight = serializers.CharField()
+    evidence = serializers.CharField(allow_blank=True, required=False)
+
+class MusicFactsResponseSerializer(serializers.Serializer):
+    """Serializer cho phan hoi tong the tu Music Detective Agent."""
+    facts = MusicFactItemSerializer(many=True)
+    agent_meta = serializers.DictField()
+    period_key = serializers.CharField()
+    period_label = serializers.CharField()
+

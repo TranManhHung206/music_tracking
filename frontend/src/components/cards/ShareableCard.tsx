@@ -8,6 +8,7 @@ export interface FavoriteItemData {
   name: string;
   artist?: string;
   playCount?: number;
+  imageUrl?: string | null;
 }
 
 export interface ShareableCardProps {
@@ -38,6 +39,57 @@ const sanitizeFileName = (name: string): string => {
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '_')
     .replace(/_+/g, '_');
+};
+
+// Thumbnail component ho tro fallback icon an toan khi anh loi hoac rong
+interface ItemThumbnailProps {
+  imageUrl?: string | null;
+  alt: string;
+  type: 'track' | 'artist' | 'album';
+  sizeClassName?: string;
+  isArtist?: boolean;
+}
+
+const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
+  imageUrl,
+  alt,
+  type,
+  sizeClassName = 'w-6 h-6',
+  isArtist = false,
+}) => {
+  const [hasError, setHasError] = useState(false);
+
+  if (imageUrl && !hasError) {
+    return (
+      <img
+        src={imageUrl}
+        alt={alt}
+        crossOrigin="anonymous"
+        onError={() => setHasError(true)}
+        className={`${sizeClassName} ${isArtist ? 'rounded-full' : 'rounded-md'} object-cover border border-white/10 shrink-0 shadow-sm`}
+      />
+    );
+  }
+
+  if (type === 'track') {
+    return (
+      <div className={`${sizeClassName} rounded-md bg-[#1DB954]/20 border border-[#1DB954]/30 flex items-center justify-center text-[#1DB954] shrink-0`}>
+        <Music2 className="w-3.5 h-3.5" />
+      </div>
+    );
+  }
+  if (type === 'artist') {
+    return (
+      <div className={`${sizeClassName} ${isArtist ? 'rounded-full' : 'rounded-md'} bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0`}>
+        <Mic2 className="w-3.5 h-3.5" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${sizeClassName} rounded-md bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0`}>
+      <Disc className="w-3.5 h-3.5" />
+    </div>
+  );
 };
 
 export const ShareableCard: React.FC<ShareableCardProps> = ({
@@ -128,13 +180,13 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
     }
   };
 
-  // Kich thuoc gon gang khong bi tran man hinh laptop
+  // Kich thuoc gon gang chuan xac theo ty le, khong bi tran man hinh laptop
   const getContainerStyle = () => {
     switch (aspectRatio) {
       case '1:1':
-        return 'w-[320px] h-[320px] sm:w-[360px] sm:h-[360px]';
+        return 'w-[330px] h-[330px] sm:w-[370px] sm:h-[370px]';
       case '4:5':
-        return 'w-[310px] h-[388px] sm:w-[335px] sm:h-[418px]';
+        return 'w-[320px] h-[400px] sm:w-[344px] sm:h-[430px]';
       case '16:9':
         return 'w-[440px] h-[248px] sm:w-[490px] sm:h-[276px]';
       case '9:16':
@@ -193,14 +245,16 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
           <div
             ref={cardRef}
             id="shareable-card-canvas"
-            className={`${getContainerStyle()} bg-gradient-to-b from-[#0F172A] via-[#131B2E] to-[#0B0F17] border-2 border-emerald-500/30 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-2xl relative overflow-hidden text-white transition-all duration-300`}
+            className={`${getContainerStyle()} bg-gradient-to-b from-[#0F172A] via-[#131B2E] to-[#0B0F17] border-2 border-emerald-500/30 rounded-3xl ${
+              aspectRatio === '4:5' ? 'p-3 sm:p-3.5' : aspectRatio === '1:1' ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5'
+            } flex flex-col justify-between shadow-2xl relative overflow-hidden text-white transition-all duration-300`}
           >
             {/* Background Neon Glow */}
             <div className="absolute -top-16 -right-16 w-44 h-44 bg-[#1DB954]/25 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-purple-600/25 rounded-full blur-3xl pointer-events-none" />
 
             {/* Header */}
-            <div className="flex items-center justify-between z-10 border-b border-slate-800/80 pb-2.5">
+            <div className={`flex items-center justify-between z-10 border-b border-slate-800/80 ${aspectRatio === '4:5' ? 'pb-1.5' : 'pb-2.5'}`}>
               <div className="flex items-center space-x-2">
                 <div className="w-6 h-6 rounded-lg bg-[#1DB954]/20 border border-[#1DB954]/40 flex items-center justify-center text-[#1DB954]">
                   <Music className="w-3.5 h-3.5" />
@@ -229,10 +283,11 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                       <img
                         src={avatarUrl}
                         alt={userName}
-                        className="w-8 h-8 rounded-full border-2 border-[#1DB954] object-cover"
+                        crossOrigin="anonymous"
+                        className="w-8 h-8 rounded-full border-2 border-[#1DB954] object-cover shrink-0"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954]">
+                      <div className="w-8 h-8 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954] shrink-0">
                         {userName.charAt(0).toUpperCase()}
                       </div>
                     )}
@@ -261,7 +316,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                   <div className="grid grid-cols-3 gap-1 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800 text-center">
                     <div>
                       <span className="text-[8px] text-slate-400 block">Lượt nghe</span>
-                      <span className="text-[10px] font-bold text-white">{totalPlays}</span>
+                      <span className="text-[10px] font-bold text-white">{totalPlays.toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-[8px] text-slate-400 block">Thời lượng</span>
@@ -274,98 +329,348 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                   </div>
 
                   <div className="bg-slate-900/60 rounded-xl p-2 border border-slate-800 space-y-1">
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Music2 className="w-3 h-3 text-[#1DB954] shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{topTrack?.name || 'Bài hát nổi bật'}</span>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topTrack?.imageUrl}
+                          alt={topTrack?.name || 'Bài hát'}
+                          type="track"
+                          sizeClassName="w-5 h-5"
+                        />
+                        <span className="font-semibold text-slate-200 truncate">{topTrack?.name || 'Bài hát nổi bật'}</span>
+                      </div>
+                      {topTrack?.playCount !== undefined && (
+                        <span className="text-[8px] text-slate-400 ml-1 shrink-0">{topTrack.playCount} lượt</span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Mic2 className="w-3 h-3 text-cyan-400 shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{resolvedTopArtistName}</span>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topArtist?.imageUrl}
+                          alt={resolvedTopArtistName}
+                          type="artist"
+                          sizeClassName="w-5 h-5"
+                          isArtist
+                        />
+                        <span className="font-semibold text-slate-200 truncate">{resolvedTopArtistName}</span>
+                      </div>
+                      {resolvedTopArtistPlays !== undefined && (
+                        <span className="text-[8px] text-slate-400 ml-1 shrink-0">{resolvedTopArtistPlays} lượt</span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Disc className="w-3 h-3 text-purple-400 shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{topAlbum?.name || 'Album tiêu biểu'}</span>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topAlbum?.imageUrl}
+                          alt={topAlbum?.name || 'Album'}
+                          type="album"
+                          sizeClassName="w-5 h-5"
+                        />
+                        <span className="font-semibold text-slate-200 truncate">{topAlbum?.name || 'Album tiêu biểu'}</span>
+                      </div>
+                      {topAlbum?.playCount !== undefined && (
+                        <span className="text-[8px] text-slate-400 ml-1 shrink-0">{topAlbum.playCount} lượt</span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
             ) : aspectRatio === '1:1' ? (
-              /* 2. Layout Vuong (1:1) */
-              <div className="grid grid-cols-2 gap-3 my-auto z-10 items-stretch">
-                {/* Cot trai */}
-                <div className="flex flex-col justify-between space-y-2">
-                  <div className="flex items-center space-x-2">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt={userName}
-                        className="w-8 h-8 rounded-full border-2 border-[#1DB954] object-cover"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954]">
-                        {userName.charAt(0).toUpperCase()}
+              /* 2. Layout Vuong (1:1) - Dan deu toan dien khong bi don cuc */
+              <div className="flex-1 flex flex-col justify-between z-10 py-1 sm:py-1.5">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 items-stretch flex-1">
+                  {/* Cot trai: Thong tin nguoi dung & AI Persona */}
+                  <div className="flex flex-col justify-between space-y-2">
+                    <div className="flex items-center space-x-2 bg-[#0B0F17]/40 p-1.5 rounded-xl border border-slate-800/60">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={userName}
+                          crossOrigin="anonymous"
+                          className="w-8 h-8 rounded-full border-2 border-[#1DB954] object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954] shrink-0">
+                          {userName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] text-slate-400 block leading-tight">Thính giả</span>
+                        <h3 className="text-xs font-bold text-white leading-tight truncate">{userName}</h3>
                       </div>
-                    )}
-                    <div>
-                      <span className="text-[9px] text-slate-400 block leading-tight">Thính giả</span>
-                      <h3 className="text-xs font-bold text-white leading-tight truncate">{userName}</h3>
+                    </div>
+
+                    <div className="bg-[#0B0F17]/70 border border-purple-500/30 rounded-2xl p-2.5 sm:p-3 flex-1 flex flex-col justify-center text-center relative overflow-hidden shadow-lg">
+                      <div className="absolute top-0 right-0 w-20 h-20 bg-purple-600/10 rounded-full blur-xl pointer-events-none" />
+                      <div className="inline-flex items-center justify-center space-x-1 text-[8px] sm:text-[9px] uppercase tracking-widest text-purple-400 font-bold mb-1">
+                        <Sparkles className="w-2.5 h-2.5 shrink-0" />
+                        <span>AI Persona</span>
+                      </div>
+                      <h2 className="text-xs sm:text-sm font-black text-white leading-snug tracking-tight">
+                        {personaTitle}
+                      </h2>
+                      <p className="text-[10px] text-emerald-300/90 italic leading-relaxed mt-1 line-clamp-3">
+                        "{tagline}"
+                      </p>
                     </div>
                   </div>
 
-                  <div className="bg-[#0B0F17]/60 border border-slate-800/80 rounded-xl p-2.5">
-                    <div className="inline-flex items-center space-x-1 text-[8px] uppercase tracking-widest text-purple-400 font-bold mb-0.5">
-                      <Sparkles className="w-2.5 h-2.5" />
-                      <span>AI Persona</span>
+                  {/* Cot phai: Thong so & Bo ba yeu thich */}
+                  <div className="flex flex-col justify-between space-y-2">
+                    <div className="grid grid-cols-3 gap-1 bg-slate-900/60 p-1.5 rounded-xl border border-slate-800 text-center">
+                      <div>
+                        <span className="text-[8px] text-slate-400 block">Lượt</span>
+                        <span className="text-[11px] font-black text-white">{totalPlays.toLocaleString()}</span>
+                      </div>
+                      <div className="border-x border-slate-800">
+                        <span className="text-[8px] text-slate-400 block">Giờ</span>
+                        <span className="text-[11px] font-black text-white">{totalHours}h</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-slate-400 block">Gu nhạc</span>
+                        <span className="text-[10px] font-bold text-[#1DB954] truncate block">{resolvedTopGenre}</span>
+                      </div>
                     </div>
-                    <h2 className="text-xs sm:text-sm font-black text-white leading-tight">
-                      {personaTitle}
-                    </h2>
-                    <p className="text-[10px] text-emerald-300/90 italic leading-snug mt-1 line-clamp-2">
-                      "{tagline}"
-                    </p>
+
+                    <div className="bg-slate-900/70 rounded-2xl p-2 sm:p-2.5 border border-slate-800 flex-1 flex flex-col justify-between space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400 font-bold">
+                          Bộ Ba Yêu Thích
+                        </span>
+                        <span className="text-[8px] sm:text-[9px] text-[#1DB954] font-semibold">Top Picks</span>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
+                          <div className="flex items-center space-x-1.5 min-w-0">
+                            <ItemThumbnail
+                              imageUrl={topTrack?.imageUrl}
+                              alt={topTrack?.name || 'Bài hát'}
+                              type="track"
+                              sizeClassName="w-6 h-6"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-white truncate leading-tight">
+                                {topTrack?.name || 'Bài hát nổi bật'}
+                              </p>
+                              <p className="text-[8px] text-slate-400 truncate leading-tight">
+                                {topTrack?.artist || 'Nghệ sĩ'}
+                              </p>
+                            </div>
+                          </div>
+                          {topTrack?.playCount !== undefined && (
+                            <span className="text-[8px] font-semibold text-slate-300 ml-1 shrink-0">
+                              {topTrack.playCount} lượt
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
+                          <div className="flex items-center space-x-1.5 min-w-0">
+                            <ItemThumbnail
+                              imageUrl={topArtist?.imageUrl}
+                              alt={resolvedTopArtistName}
+                              type="artist"
+                              sizeClassName="w-6 h-6"
+                              isArtist
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-white truncate leading-tight">
+                                {resolvedTopArtistName}
+                              </p>
+                              <p className="text-[8px] text-slate-400 leading-tight">Nghệ sĩ đồng hành #1</p>
+                            </div>
+                          </div>
+                          {resolvedTopArtistPlays !== undefined && (
+                            <span className="text-[8px] font-semibold text-slate-300 ml-1 shrink-0">
+                              {resolvedTopArtistPlays} lượt
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
+                          <div className="flex items-center space-x-1.5 min-w-0">
+                            <ItemThumbnail
+                              imageUrl={topAlbum?.imageUrl}
+                              alt={topAlbum?.name || 'Album'}
+                              type="album"
+                              sizeClassName="w-6 h-6"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-white truncate leading-tight">
+                                {topAlbum?.name || 'Album tiêu biểu'}
+                              </p>
+                              <p className="text-[8px] text-slate-400 truncate leading-tight">
+                                {topAlbum?.artist || 'Album'}
+                              </p>
+                            </div>
+                          </div>
+                          {topAlbum?.playCount !== undefined && (
+                            <span className="text-[8px] font-semibold text-slate-300 ml-1 shrink-0">
+                              {topAlbum.playCount} lượt
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : aspectRatio === '4:5' ? (
+              /* 3. Layout Dọc Chân Dung (4:5) - Toi uu do cao khong bao gio bi tran/cat Album */
+              <div className="flex flex-col justify-between flex-1 my-1 z-10 space-y-1.5">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={userName}
+                          crossOrigin="anonymous"
+                          className="w-7 h-7 rounded-full border-2 border-[#1DB954] object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954] shrink-0">
+                          {userName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="text-[8px] text-slate-400 block leading-tight">Thính giả</span>
+                        <h3 className="text-xs font-bold text-white leading-tight truncate">{userName}</h3>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[8px] text-slate-400 block leading-tight">Dòng nhạc</span>
+                      <span className="text-[10px] font-bold text-[#1DB954]">{resolvedTopGenre}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1 bg-[#0B0F17]/60 p-1.5 rounded-xl border border-slate-800/80 text-center">
+                    <div className="flex flex-col items-center">
+                      <div className="flex items-center space-x-1 text-slate-400 text-[8px]">
+                        <Headphones className="w-2.5 h-2.5" />
+                        <span>Lượt nghe</span>
+                      </div>
+                      <span className="text-[11px] font-black text-white mt-0.5">{totalPlays.toLocaleString()}</span>
+                    </div>
+                    <div className="flex flex-col items-center border-x border-slate-800/80">
+                      <div className="flex items-center space-x-1 text-slate-400 text-[8px]">
+                        <Clock className="w-2.5 h-2.5" />
+                        <span>Thời lượng</span>
+                      </div>
+                      <span className="text-[11px] font-black text-white mt-0.5">{totalHours} giờ</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <div className="flex items-center space-x-1 text-slate-400 text-[8px]">
+                        <Flame className="w-2.5 h-2.5 text-amber-400" />
+                        <span>Tần suất</span>
+                      </div>
+                      <span className="text-[11px] font-black text-amber-300 mt-0.5">Sôi nổi</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Cot phai: Thong so & Bo ba yeu thich */}
-                <div className="flex flex-col justify-between space-y-2">
-                  <div className="grid grid-cols-3 gap-1 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800 text-center">
-                    <div>
-                      <span className="text-[8px] text-slate-400 block">Lượt</span>
-                      <span className="text-[10px] font-bold text-white">{totalPlays}</span>
-                    </div>
-                    <div>
-                      <span className="text-[8px] text-slate-400 block">Giờ</span>
-                      <span className="text-[10px] font-bold text-white">{totalHours}h</span>
-                    </div>
-                    <div>
-                      <span className="text-[8px] text-slate-400 block">Dòng nhạc</span>
-                      <span className="text-[10px] font-bold text-emerald-400 truncate block">{resolvedTopGenre}</span>
-                    </div>
+                <div className="text-center py-1.5 px-2.5 bg-[#0B0F17]/70 border border-purple-500/30 rounded-xl shadow-lg relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-purple-600/10 rounded-full blur-xl pointer-events-none" />
+                  <div className="inline-flex items-center space-x-1 text-[8px] uppercase tracking-widest text-purple-400 font-bold mb-0.5">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    <span>AI Music Persona</span>
+                  </div>
+                  <h2 className="text-xs sm:text-sm font-black text-white tracking-tight leading-tight mb-0.5">
+                    {personaTitle}
+                  </h2>
+                  <p className="text-[10px] text-emerald-300/90 italic font-medium leading-snug line-clamp-2">
+                    "{tagline}"
+                  </p>
+                </div>
+
+                <div className="bg-slate-900/70 rounded-xl p-2 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between pb-0.5">
+                    <span className="text-[8px] uppercase font-bold text-slate-400 tracking-wider">
+                      Bộ Ba Yêu Thích Trong Kỳ
+                    </span>
+                    <span className="text-[8px] text-[#1DB954] font-semibold">Top Picks</span>
                   </div>
 
-                  <div className="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800 space-y-1.5">
-                    <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block mb-1">
-                      Bộ Ba Yêu Thích
-                    </span>
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Music2 className="w-3 h-3 text-[#1DB954] shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{topTrack?.name || 'Bài hát nổi bật'}</span>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1 rounded-lg border border-slate-800/60">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topTrack?.imageUrl}
+                          alt={topTrack?.name || 'Bài hát'}
+                          type="track"
+                          sizeClassName="w-6 h-6"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-white truncate leading-tight">
+                            {topTrack?.name || 'Bài hát nổi bật'}
+                          </p>
+                          <p className="text-[8px] text-slate-400 truncate leading-tight">
+                            {topTrack?.artist || 'Nghệ sĩ'}
+                          </p>
+                        </div>
+                      </div>
+                      {topTrack?.playCount !== undefined && (
+                        <span className="text-[8px] font-semibold text-slate-300 ml-1.5 shrink-0">
+                          {topTrack.playCount} lượt
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Mic2 className="w-3 h-3 text-cyan-400 shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{resolvedTopArtistName}</span>
+
+                    <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1 rounded-lg border border-slate-800/60">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topArtist?.imageUrl}
+                          alt={resolvedTopArtistName}
+                          type="artist"
+                          sizeClassName="w-6 h-6"
+                          isArtist
+                        />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-white truncate leading-tight">
+                            {resolvedTopArtistName}
+                          </p>
+                          <p className="text-[8px] text-slate-400 leading-tight">Nghệ sĩ đồng hành #1</p>
+                        </div>
+                      </div>
+                      {resolvedTopArtistPlays !== undefined && (
+                        <span className="text-[8px] font-semibold text-slate-300 ml-1.5 shrink-0">
+                          {resolvedTopArtistPlays} lượt
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-1.5 text-[10px]">
-                      <Disc className="w-3 h-3 text-purple-400 shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">{topAlbum?.name || 'Album tiêu biểu'}</span>
+
+                    <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1 rounded-lg border border-slate-800/60">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topAlbum?.imageUrl}
+                          alt={topAlbum?.name || 'Album'}
+                          type="album"
+                          sizeClassName="w-6 h-6"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-white truncate leading-tight">
+                            {topAlbum?.name || 'Album tiêu biểu'}
+                          </p>
+                          <p className="text-[8px] text-slate-400 truncate leading-tight">
+                            {topAlbum?.artist || 'Nhiều nghệ sĩ'}
+                          </p>
+                        </div>
+                      </div>
+                      {topAlbum?.playCount !== undefined && (
+                        <span className="text-[8px] font-semibold text-slate-300 ml-1.5 shrink-0">
+                          {topAlbum.playCount} lượt
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
             ) : (
-              /* 3. Layout Dọc: Story (9:16) & Chân dung (4:5) */
+              /* 4. Layout Dọc Story (9:16) - Phong khoang, sang trong */
               <div className="flex flex-col justify-between flex-1 my-1.5 z-10 space-y-2.5">
-                {/* Hang 1: Profile & 3 Chi So Nhanh */}
+                {/* Hang 1 */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2.5">
@@ -373,10 +678,11 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                         <img
                           src={avatarUrl}
                           alt={userName}
-                          className="w-9 h-9 rounded-full border-2 border-[#1DB954] object-cover"
+                          crossOrigin="anonymous"
+                          className="w-9 h-9 rounded-full border-2 border-[#1DB954] object-cover shrink-0"
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954]">
+                        <div className="w-9 h-9 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center text-xs font-bold text-[#1DB954] shrink-0">
                           {userName.charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -392,7 +698,6 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                     </div>
                   </div>
 
-                  {/* 3 O Thong So Micro-Stats */}
                   <div className="grid grid-cols-3 gap-1.5 bg-[#0B0F17]/60 p-2 rounded-xl border border-slate-800/80 text-center">
                     <div className="flex flex-col items-center">
                       <div className="flex items-center space-x-1 text-slate-400 text-[9px]">
@@ -418,7 +723,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                   </div>
                 </div>
 
-                {/* Hang 2: Khối Độc Bản AI Music Persona (Giữ nguyên vẹn) */}
+                {/* Hang 2: AI Persona */}
                 <div className="text-center py-2.5 bg-[#0B0F17]/70 border border-purple-500/30 rounded-2xl p-3 shadow-lg relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-purple-600/10 rounded-full blur-xl pointer-events-none" />
                   <div className="inline-flex items-center space-x-1 text-[9px] uppercase tracking-widest text-purple-400 font-bold mb-1">
@@ -433,7 +738,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                   </p>
                 </div>
 
-                {/* Hang 3: Bộ Ba Yêu Thích Trong Kỳ (Bài hát, Nghệ sĩ, Album) */}
+                {/* Hang 3: Bo Ba Yeu Thich */}
                 <div className="bg-slate-900/70 rounded-2xl p-3 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">
@@ -443,12 +748,14 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                   </div>
 
                   <div className="space-y-1.5">
-                    {/* 1. Bai hat yeu thich */}
                     <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
-                      <div className="flex items-center space-x-2 min-w-0">
-                        <div className="w-5 h-5 rounded-md bg-[#1DB954]/20 flex items-center justify-center text-[#1DB954] shrink-0">
-                          <Music2 className="w-3 h-3" />
-                        </div>
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topTrack?.imageUrl}
+                          alt={topTrack?.name || 'Bài hát'}
+                          type="track"
+                          sizeClassName="w-8 h-8"
+                        />
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-white truncate leading-tight">
                             {topTrack?.name || 'Bài hát nổi bật'}
@@ -465,12 +772,15 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                       )}
                     </div>
 
-                    {/* 2. Nghe si yeu thich */}
                     <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
-                      <div className="flex items-center space-x-2 min-w-0">
-                        <div className="w-5 h-5 rounded-md bg-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
-                          <Mic2 className="w-3 h-3" />
-                        </div>
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topArtist?.imageUrl}
+                          alt={resolvedTopArtistName}
+                          type="artist"
+                          sizeClassName="w-8 h-8"
+                          isArtist
+                        />
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-white truncate leading-tight">
                             {resolvedTopArtistName}
@@ -485,12 +795,14 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                       )}
                     </div>
 
-                    {/* 3. Album yeu thich */}
                     <div className="flex items-center justify-between bg-[#0B0F17]/50 p-1.5 rounded-lg border border-slate-800/60">
-                      <div className="flex items-center space-x-2 min-w-0">
-                        <div className="w-5 h-5 rounded-md bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
-                          <Disc className="w-3 h-3" />
-                        </div>
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <ItemThumbnail
+                          imageUrl={topAlbum?.imageUrl}
+                          alt={topAlbum?.name || 'Album'}
+                          type="album"
+                          sizeClassName="w-8 h-8"
+                        />
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-white truncate leading-tight">
                             {topAlbum?.name || 'Album tiêu biểu'}
@@ -512,7 +824,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
             )}
 
             {/* Bottom Visualizer Accent Bar (Thay the dong text AI cu) */}
-            <div className="z-10 pt-2 flex items-center justify-center space-x-1 opacity-60">
+            <div className={`z-10 flex items-center justify-center space-x-1 opacity-60 ${aspectRatio === '4:5' ? 'pt-1' : 'pt-2'}`}>
               <span className="w-1 h-2 bg-[#1DB954] rounded-full" />
               <span className="w-1 h-3.5 bg-[#1DB954] rounded-full" />
               <span className="w-1 h-5 bg-[#1DB954] rounded-full" />

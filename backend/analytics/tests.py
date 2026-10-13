@@ -278,16 +278,16 @@ class HybridGenreClassificationTests(AnalyticsBaseTestCase):
         # 1. Bai hat Viet Nam Acoustic / Indie
         track_acoustic = Track(name='Tự', energy=0.40, acousticness=0.85, danceability=0.45, tempo=85.0)
         genre_ac = classify_artist_genres('Thịnh Suy', 'Tự', artists=['Thịnh Suy'], track=track_acoustic)
-        self.assertEqual(genre_ac, 'V-Pop (Acoustic / Indie)')
+        self.assertEqual(genre_ac, 'V-Pop')
 
         track_sivan = Track(name='Để Dành Khi Thức Giấc', energy=0.69, acousticness=0.85, danceability=0.49, tempo=129.0)
         genre_sivan = classify_artist_genres('SIVAN', 'Để Dành Khi Thức Giấc', artists=['SIVAN'], track=track_sivan)
-        self.assertEqual(genre_sivan, 'V-Pop (Acoustic / Indie)')
+        self.assertEqual(genre_sivan, 'V-Pop')
 
         # 2. Bai hat Viet Nam Electronic / Dance
         track_dance = Track(name='Ngẫu Hứng', energy=0.88, acousticness=0.15, danceability=0.75, tempo=130.0)
         genre_ed = classify_artist_genres('Hoaprox', 'Ngẫu Hứng', artists=['Hoaprox'], track=track_dance)
-        self.assertEqual(genre_ed, 'V-Pop (Electronic / Dance)')
+        self.assertEqual(genre_ed, 'V-Pop')
 
         # 3. Bai hat Quoc te EDM / Electronic
         track_edm = Track(name='Faded', energy=0.85, acousticness=0.10, danceability=0.60, tempo=126.0)
