@@ -142,7 +142,8 @@ VPOP_ARTISTS = {
     "phan mạnh quỳnh", "phùng khánh linh", "mr siro", "trịnh thăng bình",
     "hương tràm", "đông nhi", "noo phước thịnh", "trúc nhân", "bùi anh tuấn",
     "trung quân", "thùy chi", "mỹ tâm", "hà anh tuấn", "hà nhi", "tăng duy tân",
-    "vương anh tú", "ronboogz", "coldzy", "gill", "tage", "vsoul", "rhyder"
+    "vương anh tú", "ronboogz", "coldzy", "gill", "tage", "vsoul", "rhyder",
+    "hoaprox", "masew", "touliver", "slimv", "triple d"
 }
 
 VPOP_KEYWORDS = [
@@ -150,10 +151,6 @@ VPOP_KEYWORDS = [
     "ngayquangay", "tinhco", "vanvuong", "say hi", "anh trai", "chị đẹp",
     "rap viet", "chuyện rằng", "lời tạm biệt", "người hay nói"
 ]
-
-VPOP_EDM_ARTISTS = {
-    "hoaprox", "masew", "touliver", "slimv", "triple d", "k-icm"
-}
 
 EDM_ARTISTS = {
     "thefatrat", "alan walker", "lost sky", "arc north", "mountkid", "tokyo machine",
@@ -312,22 +309,7 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     is_edm_title = any(k in title_lower for k in ["remix", "radio edit", "dubstep", "bass", "club mix", "prod."])
 
     if is_vietnamese:
-        # Nhom V-Pop phan nhanh chi tiet bang dac trung song am DSP
-        is_vpop_edm_artist = any(
-            any(is_artist_match(a_name, ea) for ea in VPOP_EDM_ARTISTS) for a_name in artist_names_lower
-        )
-        is_vpop_remix = (
-            any(k in title_lower for k in ["remix", "vinahouse", "dubstep", "club mix"])
-            and not any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"])
-        )
-        is_vpop_edm_dsp = (energy >= 0.85 and tempo >= 128 and acousticness <= 0.25 and danceability >= 0.65)
-        if is_vpop_edm_artist or is_vpop_remix or is_vpop_edm_dsp:
-            return "V-Pop (Electronic / Dance)"
-        if acousticness >= 0.50 or (energy <= 0.48 and danceability <= 0.55) or any(k in title_lower for k in ["acoustic", "piano", "lofi", "chill"]):
-            return "V-Pop (Acoustic / Indie)"
-        if danceability >= 0.68 or any(a in ["low g", "pháp kiều", "phap kieu", "hieuthuhai", "wren evans", "binz", "freaky"] for a in artist_names_lower):
-            return "V-Pop (R&B / Hip-Hop)"
-        return "V-Pop (Modern Pop)"
+        return "V-Pop"
 
     # 4. Nhom Quoc te / Au My phan nhanh chi tiet bang dac trung song am DSP
     if is_edm_artist or is_edm_title or (energy >= 0.78 and acousticness <= 0.35):
@@ -359,13 +341,10 @@ def get_genre_distribution(user, start_dt, end_dt) -> dict:
 
     genre_counts = {}
     genre_colors = {
-        "V-Pop (Electronic / Dance)": "#A855F7",
-        "V-Pop (Acoustic / Indie)": "#10B981",
+        "V-Pop": "#EC4899",
         "EDM / Electronic": "#1DB954",
-        "Acoustic / Lo-Fi": "#14B8A6",
+        "Acoustic / Lo-Fi": "#10B981",
         "Phonk / High Energy": "#E11D48",
-        "V-Pop (R&B / Hip-Hop)": "#F59E0B",
-        "V-Pop (Modern Pop)": "#EC4899",
         "US-UK / Pop": "#3B82F6",
         "Hip-Hop / Rap": "#F97316",
         "K-Pop": "#FBBF24",

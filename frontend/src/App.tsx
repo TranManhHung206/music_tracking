@@ -24,7 +24,7 @@ import type {
   GenreDistributionData,
   ListeningHistoryRecord,
 } from './types/analytics';
-import type { AIMusicPersona, RecommendationResult } from './types/ai';
+import type { AIMusicPersona, RecommendationResult, MusicFact, AgentMeta } from './types/ai';
 
 import {
   api,
@@ -39,7 +39,8 @@ import {
   MOCK_GENRES,
   MOCK_PERSONA,
   MOCK_LISTENING_HISTORY,
-  MOCK_CALENDAR_PERIODS,
+  MOCK_MUSIC_FACTS,
+  getDynamicMockCalendarPeriods,
 } from './services/api';
 
 import { Navbar } from './components/ui/Navbar';
@@ -54,6 +55,7 @@ import { GenreDistribution } from './components/charts/GenreDistribution';
 import { WeeklyComparisonChart } from './components/charts/WeeklyComparisonChart';
 
 import { PersonaCard } from './components/cards/PersonaCard';
+import { MusicFactsSection } from './components/analytics/MusicFactsSection';
 import { TopTracksList } from './components/cards/TopTracksList';
 import { TopArtistsList } from './components/cards/TopArtistsList';
 import { TopAlbumsList } from './components/cards/TopAlbumsList';
@@ -89,17 +91,44 @@ export function App() {
     const saved = localStorage.getItem('user_calendar_period_type');
     return (saved === 'week' || saved === 'month' || saved === 'year') ? (saved as CalendarPeriodType) : 'week';
   });
-  const [availablePeriods, setAvailablePeriods] = useState<CalendarPeriodItem[]>(() => MOCK_CALENDAR_PERIODS['week'] || []);
-  const [selectedPeriod, setSelectedPeriod] = useState<CalendarPeriodItem | null>(() => (MOCK_CALENDAR_PERIODS['week'] ? MOCK_CALENDAR_PERIODS['week'][0] : null));
+  const [availablePeriods, setAvailablePeriods] = useState<CalendarPeriodItem[]>(() => {
+    const dynamicMocks = getDynamicMockCalendarPeriods();
+    const saved = localStorage.getItem('user_calendar_period_type') as CalendarPeriodType;
+    const type = (saved === 'week' || saved === 'month' || saved === 'year') ? saved : 'week';
+    return dynamicMocks[type] || [];
+  });
+  const [selectedPeriod, setSelectedPeriod] = useState<CalendarPeriodItem | null>(() => {
+    const dynamicMocks = getDynamicMockCalendarPeriods();
+    const saved = localStorage.getItem('user_calendar_period_type') as CalendarPeriodType;
+    const type = (saved === 'week' || saved === 'month' || saved === 'year') ? saved : 'week';
+    const savedMode = localStorage.getItem('user_calendar_selected_mode');
+    const savedKey = localStorage.getItem('user_calendar_selected_key');
+    const periodsForType = dynamicMocks[type] || [];
+
+    if (savedMode === 'specific' && savedKey) {
+      const match = periodsForType.find((p) => p.key === savedKey);
+      if (match) return match;
+    }
+    return periodsForType.find((p) => p.is_current) || periodsForType[0] || null;
+  });
   const [isLoadingPeriods, setIsLoadingPeriods] = useState(false);
 
   const handlePeriodTypeChange = (newType: CalendarPeriodType) => {
     setPeriodType(newType);
     localStorage.setItem('user_calendar_period_type', newType);
+    localStorage.setItem('user_calendar_selected_mode', 'current');
+    localStorage.removeItem('user_calendar_selected_key');
   };
 
   const handlePeriodSelect = (period: CalendarPeriodItem) => {
     setSelectedPeriod(period);
+    if (period.is_current) {
+      localStorage.setItem('user_calendar_selected_mode', 'current');
+      localStorage.removeItem('user_calendar_selected_key');
+    } else {
+      localStorage.setItem('user_calendar_selected_mode', 'specific');
+      localStorage.setItem('user_calendar_selected_key', period.key);
+    }
   };
 
   // Analytics Data State
@@ -118,6 +147,11 @@ export function App() {
   const [persona, setPersona] = useState<AIMusicPersona>(MOCK_PERSONA);
   const [isGeneratingPersona, setIsGeneratingPersona] = useState(false);
 
+  // Music Facts Detective Agent State
+  const [musicFacts, setMusicFacts] = useState<MusicFact[]>(MOCK_MUSIC_FACTS.facts);
+  const [agentMeta, setAgentMeta] = useState<AgentMeta | undefined>(MOCK_MUSIC_FACTS.agent_meta);
+  const [isLoadingFacts, setIsLoadingFacts] = useState(false);
+
   // Modals & Action States
   const [isSyncing, setIsSyncing] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -133,7 +167,7 @@ export function App() {
         ? { start_date: period.start_date, end_date: period.end_date }
         : '30d';
 
-      const [sum, tracks, artists, albums, radar, heatmap, weeklyComp, genres, p, history] = await Promise.all([
+      const [sum, tracks, artists, albums, radar, heatmap, weeklyComp, genres, p, history, factsRes] = await Promise.all([
         api.getSummary(timeFilter),
         api.getTopTracks(timeFilter, 5),
         api.getTopArtists(timeFilter, 5),
@@ -144,6 +178,7 @@ export function App() {
         api.getGenreDistribution(timeFilter),
         api.getLatestPersona('monthly'),
         api.getListeningHistory(20),
+        api.getMusicFacts(period?.key || 'week'),
       ]);
 
       setSummary(sum);
@@ -156,6 +191,10 @@ export function App() {
       setGenreData(genres);
       setPersona(p);
       setRecentScrobbles(history);
+      if (factsRes && Array.isArray(factsRes.facts)) {
+        setMusicFacts(factsRes.facts);
+        setAgentMeta(factsRes.agent_meta);
+      }
     } catch {
       // Graceful fallback da xu ly trong api client
     }
@@ -214,8 +253,21 @@ export function App() {
         if (!isCancelled && periods.length > 0) {
           setAvailablePeriods(periods);
           setSelectedPeriod((prev) => {
-            const match = prev && periods.find((p) => p.key === prev.key);
-            return match || periods[0];
+            const savedMode = localStorage.getItem('user_calendar_selected_mode');
+            const savedKey = localStorage.getItem('user_calendar_selected_key');
+
+            if (savedMode === 'specific' && savedKey) {
+              const matchedSaved = periods.find((p) => p.key === savedKey);
+              if (matchedSaved) return matchedSaved;
+            }
+
+            if (prev && !prev.is_current && savedMode === 'specific') {
+              const matchedPrev = periods.find((p) => p.key === prev.key);
+              if (matchedPrev) return matchedPrev;
+            }
+
+            const current = periods.find((p) => p.is_current);
+            return current || periods[0];
           });
         }
       } finally {
@@ -323,9 +375,12 @@ export function App() {
 
   const handleEnterDemo = () => {
     setIsDemoMode(true);
+    localStorage.setItem('user_calendar_selected_mode', 'current');
+    localStorage.removeItem('user_calendar_selected_key');
+    const dynamicMocks = getDynamicMockCalendarPeriods();
     setPeriodType('week');
-    setAvailablePeriods(MOCK_CALENDAR_PERIODS.week);
-    setSelectedPeriod(MOCK_CALENDAR_PERIODS.week[0]);
+    setAvailablePeriods(dynamicMocks.week);
+    setSelectedPeriod(dynamicMocks.week[0]);
     setSummary(MOCK_SUMMARY);
     setTopTracks(MOCK_TOP_TRACKS);
     setTopArtists(MOCK_TOP_ARTISTS);
@@ -335,6 +390,8 @@ export function App() {
     setWeeklyComparison(MOCK_WEEKLY_COMPARISON);
     setGenreData(MOCK_GENRES);
     setPersona(MOCK_PERSONA);
+    setMusicFacts(MOCK_MUSIC_FACTS.facts);
+    setAgentMeta(MOCK_MUSIC_FACTS.agent_meta);
     addToast('info', 'Đã bật Chế độ Xem thử (Demo) với dữ liệu mẫu.');
   };
 
@@ -387,6 +444,27 @@ export function App() {
       addToast('error', 'Không thể tạo AI Persona. Vui lòng kiểm tra API Key.');
     } finally {
       setIsGeneratingPersona(false);
+    }
+  };
+
+  const handleRefreshFacts = async () => {
+    if (isDemoMode && !user) {
+      addToast('info', 'Bạn đang ở chế độ xem thử. Dữ liệu sự thật âm nhạc mẫu đang hiển thị.');
+      return;
+    }
+
+    setIsLoadingFacts(true);
+    try {
+      const res = await api.getMusicFacts(selectedPeriod?.key || 'week', true);
+      if (res && Array.isArray(res.facts)) {
+        setMusicFacts(res.facts);
+        setAgentMeta(res.agent_meta);
+        addToast('success', 'Aura Detective Agent đã điều tra và cập nhật các sự thật mới!');
+      }
+    } catch {
+      addToast('error', 'Không thể làm mới sự thật âm nhạc lúc này.');
+    } finally {
+      setIsLoadingFacts(false);
     }
   };
 
@@ -564,6 +642,17 @@ export function App() {
                 />
               </section>
 
+              {/* 2.1 AI Music Detective Facts Section */}
+              <section>
+                <MusicFactsSection
+                  facts={musicFacts}
+                  agentMeta={agentMeta}
+                  periodLabel={selectedPeriod ? selectedPeriod.label : 'Tuần này'}
+                  isLoading={isLoadingFacts}
+                  onRefresh={handleRefreshFacts}
+                />
+              </section>
+
               {/* 3. Deep Visual Analytics: Radar & 24x7 Heatmap */}
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 flex">
@@ -639,6 +728,7 @@ export function App() {
                   ? topTracks[0].artists.join(', ')
                   : 'Nghệ sĩ',
                 playCount: topTracks[0].play_count,
+                imageUrl: topTracks[0].album_image_url,
               }
             : undefined
         }
@@ -647,6 +737,7 @@ export function App() {
             ? {
                 name: topArtists[0].name,
                 playCount: topArtists[0].play_count,
+                imageUrl: topArtists[0].image_url,
               }
             : undefined
         }
@@ -658,6 +749,7 @@ export function App() {
                   ? topAlbums[0].artists.join(', ')
                   : 'Nhiều nghệ sĩ',
                 playCount: topAlbums[0].play_count,
+                imageUrl: topAlbums[0].image_url,
               }
             : undefined
         }

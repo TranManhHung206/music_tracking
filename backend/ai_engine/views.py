@@ -12,8 +12,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 
 from .models import AIMusicPersona
-from .serializers import AIMusicPersonaSerializer, GeneratePersonaRequestSerializer
-from .services import generate_and_save_persona, get_song_recommendations
+from .serializers import (
+    AIMusicPersonaSerializer,
+    GeneratePersonaRequestSerializer,
+    MusicFactsResponseSerializer,
+)
+from .services import (
+    generate_and_save_persona,
+    get_song_recommendations,
+    get_or_generate_music_facts,
+)
 
 class PersonaGenerateView(APIView):
     """API kich hoat tien trinh AI phan tich tam ly va ca tinh am nhac cua nguoi dung."""
@@ -78,3 +86,21 @@ class SongRecommendationsView(APIView):
             return Response(result, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+class MusicFactsView(APIView):
+    """API lay danh sach su that am nhac do Aura Music Detective Agent truy vet."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        period = request.query_params.get('period', 'week')
+        force_refresh_str = request.query_params.get('refresh', 'false').lower()
+        force_refresh = force_refresh_str in ['true', '1', 'yes']
+
+        result = get_or_generate_music_facts(
+            user=request.user,
+            period_key=period,
+            force_refresh=force_refresh,
+        )
+        serializer = MusicFactsResponseSerializer(result)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+

@@ -40,3 +40,30 @@ export interface RecommendationResult {
   seed_track: SeedTrackInfo;
   recommendations: SongRecommendation[];
 }
+
+export interface MusicFact {
+  id: string;
+  category: 'repeat_loop' | 'night_owl' | 'marathon' | 'artist_dominance' | 'contrast' | 'milestone' | 'general';
+  badge: string;
+  title: string;
+  description: string;
+  metric_highlight: string;
+  evidence?: string;
+}
+
+export interface AgentMeta {
+  agent_name: string;
+  provider_used: string;
+  model_name: string;
+  iterations_used: number;
+  tools_called: string[];
+  is_fallback: boolean;
+}
+
+export interface MusicFactsResponse {
+  facts: MusicFact[];
+  agent_meta: AgentMeta;
+  period_key: string;
+  period_label: string;
+}
+

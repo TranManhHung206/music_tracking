@@ -14,6 +14,11 @@ from .knn_recommender import (
     extract_track_vector,
     normalize_tempo,
 )
+from .facts_agent import (
+    get_or_generate_music_facts,
+    run_music_facts_agent,
+    generate_heuristic_facts,
+)
 
 __all__ = [
     'generate_and_save_persona',
@@ -22,4 +27,7 @@ __all__ = [
     'get_song_recommendations',
     'extract_track_vector',
     'normalize_tempo',
+    'get_or_generate_music_facts',
+    'run_music_facts_agent',
+    'generate_heuristic_facts',
 ]

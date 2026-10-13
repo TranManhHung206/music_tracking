@@ -178,3 +178,31 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         self.assertIn('seed_track', data)
         self.assertIn('recommendations', data)
         self.assertEqual(len(data['recommendations']), 2)
+
+    def test_music_facts_api_authenticated(self):
+        # Them lich su nghe nhac de test
+        from django.utils import timezone
+        now = timezone.now()
+        for i in range(4):
+            ListeningHistory.objects.create(
+                user=self.user,
+                track=self.seed_track,
+                played_at=now - timezone.timedelta(minutes=10 * i),
+            )
+
+        res = self.client.get('/api/ai/facts/?period=week')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        self.assertIn('facts', data)
+        self.assertIn('agent_meta', data)
+        self.assertIn('period_key', data)
+        self.assertGreater(len(data['facts']), 0)
+        self.assertIn('badge', data['facts'][0])
+        self.assertIn('title', data['facts'][0])
+        self.assertIn('metric_highlight', data['facts'][0])
+
+    def test_music_facts_unauthenticated_rejected(self):
+        self.client.logout()
+        res = self.client.get('/api/ai/facts/?period=week')
+        self.assertIn(res.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+
