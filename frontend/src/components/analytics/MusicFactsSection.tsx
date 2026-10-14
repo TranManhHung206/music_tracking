@@ -8,6 +8,7 @@ interface MusicFactsSectionProps {
   periodLabel?: string;
   isLoading?: boolean;
   onRefresh?: () => void;
+  cooldownSeconds?: number;
 }
 
 export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
@@ -16,11 +17,12 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
   periodLabel = 'Kỳ này',
   isLoading = false,
   onRefresh,
+  cooldownSeconds = 0,
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefreshClick = async () => {
-    if (onRefresh && !isLoading && !isRefreshing) {
+    if (onRefresh && !isLoading && !isRefreshing && cooldownSeconds <= 0) {
       setIsRefreshing(true);
       try {
         await onRefresh();
@@ -78,6 +80,8 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
     }
   };
 
+  const isPreview = agentMeta?.provider_used === 'db-analytics-preview';
+
   return (
     <div className="w-full bg-[#131B2E] border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden">
       {/* Background Neon Subtle Glow */}
@@ -100,7 +104,9 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Groq LLM tự động truy vấn dữ liệu thực tế và điều tra sự thật âm nhạc ({periodLabel})
+              {isPreview
+                ? `Thống kê nhanh (${periodLabel}). Nhấn nút để kích hoạt Thám tử AI điều tra chuyên sâu.`
+                : `Groq LLM truy vấn dữ liệu thực tế và điều tra sự thật âm nhạc (${periodLabel})`}
             </p>
           </div>
         </div>
@@ -111,9 +117,13 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
             <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-[#0B0F17]/60 border border-slate-800 text-[11px] text-slate-400">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>
-                {agentMeta.provider_used === 'groq'
+                {agentMeta.provider_used.includes('backup')
+                  ? 'Groq 20B Backup'
+                  : agentMeta.provider_used.includes('groq')
                   ? `Groq LPU (${agentMeta.tools_called.length} Tools)`
-                  : 'Harness Heuristic Engine'}
+                  : agentMeta.provider_used === 'db-analytics-preview'
+                  ? 'Thống kê nội bộ'
+                  : 'Harness Heuristic'}
               </span>
             </div>
           )}
@@ -121,12 +131,24 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
           {onRefresh && (
             <button
               onClick={handleRefreshClick}
-              disabled={isLoading || isRefreshing}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#0B0F17]/80 hover:bg-[#0B0F17] text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-              title="Yêu cầu Agent điều tra lại dữ liệu"
+              disabled={isLoading || isRefreshing || cooldownSeconds > 0}
+              className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer disabled:opacity-50 ${
+                isPreview
+                  ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border-purple-500/30'
+                  : 'bg-[#0B0F17]/80 hover:bg-[#0B0F17] text-slate-300 hover:text-white border-slate-800 hover:border-slate-700'
+              }`}
+              title={cooldownSeconds > 0 ? `Vui lòng chờ ${cooldownSeconds}s` : 'Kích hoạt Thám tử AI điều tra'}
             >
               <RotateCw className={`w-3.5 h-3.5 ${isLoading || isRefreshing ? 'animate-spin text-[#1DB954]' : ''}`} />
-              <span>{isLoading || isRefreshing ? 'Đang điều tra...' : 'Điều tra lại'}</span>
+              <span>
+                {cooldownSeconds > 0
+                  ? `Chờ ${cooldownSeconds}s`
+                  : isLoading || isRefreshing
+                  ? 'Đang điều tra...'
+                  : isPreview
+                  ? 'Kích hoạt Thám tử AI'
+                  : 'Điều tra lại'}
+              </span>
             </button>
           )}
         </div>

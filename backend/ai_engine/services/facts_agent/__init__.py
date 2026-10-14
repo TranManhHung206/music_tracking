@@ -93,20 +93,58 @@ def parse_period_to_bounds(period_key: str = 'week') -> tuple[datetime, datetime
     end_dt = now
     return start_dt, end_dt, "Kỳ phân tích gần đây"
 
-def get_or_generate_music_facts(user, period_key: str = 'week', force_refresh: bool = False) -> dict:
+def get_or_generate_music_facts(
+    user,
+    period_key: str = 'week',
+    force_refresh: bool = False,
+    allow_ai_generation: bool = False,
+) -> dict:
     """
     Lay du lieu Music Facts tu Cache hoac kich hoat Groq Agent sinh moi.
-    TTL mac dinh 6 gio (21600 giay).
+    - Neu allow_ai_generation=False (duyet xem thong thuong): Chi tra ve du lieu Cache
+      hoac tinh toan nhanh qua Heuristic Engine (0 token AI).
+    - Neu allow_ai_generation=True (nguoi dung bam nut thu cong): Kich hoat ReAct Agent voi cooldown 15s.
     """
     clean_period = (period_key or 'week').strip()
     cache_key = f"user_music_facts:{user.id}:{clean_period}"
+    start_dt, end_dt, period_label = parse_period_to_bounds(clean_period)
 
+    # 1. Neu khong yeu cau refresh, uu tien doc tu Cache
     if not force_refresh:
         cached_result = cache.get(cache_key)
         if cached_result:
             return cached_result
 
-    start_dt, end_dt, period_label = parse_period_to_bounds(clean_period)
+    # 2. Neu nguoi dung khong chu dong bam kich hoat AI (chi duyet web binh thuong)
+    if not allow_ai_generation:
+        # Tra ve facts tinh toan nhanh tu Heuristic Engine, 0 token AI
+        heuristic_facts = generate_heuristic_facts(user, start_dt, end_dt)
+        response_payload = {
+            "facts": heuristic_facts,
+            "agent_meta": {
+                "agent_name": "Aura Music Detective",
+                "provider_used": "db-analytics-preview",
+                "model_name": "db-analytics-heuristic",
+                "iterations_used": 0,
+                "tools_called": ["direct_db_queries"],
+                "is_fallback": True,
+            },
+            "period_key": clean_period,
+            "period_label": period_label,
+        }
+        # Cache ngan 1 gio cho preview
+        cache.set(cache_key, response_payload, timeout=3600)
+        return response_payload
+
+    # 3. Khi nguoi dung bam nut kich hoat AI thu cong: Kiem tra Anti-Spam Cooldown 15s
+    cooldown_key = f"user_facts_cooldown:{user.id}"
+    if cache.get(cooldown_key):
+        cached_result = cache.get(cache_key)
+        if cached_result:
+            return cached_result
+    cache.set(cooldown_key, True, timeout=15)
+
+    # Kich hoat Agent voi kien truc du phong 3 tang
     agent_result = run_music_facts_agent(user, start_dt, end_dt, period_label=period_label)
 
     response_payload = {

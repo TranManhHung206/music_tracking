@@ -7,6 +7,7 @@ interface PersonaCardProps {
   isGenerating: boolean;
   onRegenerate: () => void;
   onOpenShareModal: () => void;
+  cooldownSeconds?: number;
 }
 
 export const PersonaCard: React.FC<PersonaCardProps> = ({
@@ -14,6 +15,7 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
   isGenerating,
   onRegenerate,
   onOpenShareModal,
+  cooldownSeconds = 0,
 }) => {
   return (
     <div className="w-full bg-gradient-to-br from-[#131B2E] via-[#0F172A] to-[#131B2E] border border-purple-900/30 hover:border-purple-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden transition-all duration-300">
@@ -33,7 +35,11 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
                 AI Music Persona
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                {persona.provider_used || 'Groq GPT-OSS-120B'}
+                {persona.provider_used?.includes('backup')
+                  ? 'Groq 20B Backup'
+                  : persona.provider_used?.includes('groq')
+                  ? 'Groq GPT-OSS'
+                  : persona.provider_used || 'AI Music Persona'}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
@@ -46,11 +52,12 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
         <div className="flex items-center space-x-2">
           <button
             onClick={onRegenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || cooldownSeconds > 0}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-[#0B0F17] border border-[#1E293B] text-slate-300 hover:text-white hover:border-purple-500/50 transition-all cursor-pointer disabled:opacity-50"
+            title={cooldownSeconds > 0 ? `Vui lòng chờ ${cooldownSeconds}s` : 'Phân tích lại cá tính AI'}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin text-purple-400' : ''}`} />
-            <span>{isGenerating ? 'Đang phân tích...' : 'Phân tích lại'}</span>
+            <span>{cooldownSeconds > 0 ? `Chờ ${cooldownSeconds}s` : (isGenerating ? 'Đang phân tích...' : 'Phân tích lại')}</span>
           </button>
 
           <button

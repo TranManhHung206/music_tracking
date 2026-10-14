@@ -149,6 +149,43 @@ class RadarAndHeatmapTests(AnalyticsBaseTestCase):
             self.assertTrue(0 <= cell['hour'] <= 23)
             self.assertGreaterEqual(cell['count'], 0)
 
+    def test_heatmap_month_calendar(self):
+        url = '/api/analytics/heatmap/?time_range=month&period_type=month'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data.get('period_type'), 'month')
+        self.assertIn('month_calendar', data)
+        month_cal = data['month_calendar']
+        self.assertIn('days', month_cal)
+        self.assertTrue(28 <= len(month_cal['days']) <= 31)
+        self.assertIn('total_plays', month_cal)
+        self.assertIn('peak_day', month_cal)
+
+    def test_heatmap_month_calendar_clamped_when_range_too_long(self):
+        url = '/api/analytics/heatmap/?start_date=2026-01-01&end_date=2026-12-31&period_type=month'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data.get('period_type'), 'month')
+        self.assertIn('month_calendar', data)
+        self.assertEqual(len(data['month_calendar']['days']), 31)
+
+    def test_heatmap_year_calendar(self):
+        url = '/api/analytics/heatmap/?time_range=year&period_type=year'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+
+        self.assertEqual(data.get('period_type'), 'year')
+        self.assertIn('year_calendar', data)
+        year_cal = data['year_calendar']
+        self.assertIn('days', year_cal)
+        self.assertGreaterEqual(len(year_cal['days']), 365)
+        self.assertIn('months_header', year_cal)
+        self.assertIn('longest_streak', year_cal)
+
 class BarChartRaceTests(AnalyticsBaseTestCase):
     """Kiem thu chuoi thoi gian luy ke don dieu cua Bar Chart Race."""
 

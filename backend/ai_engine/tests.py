@@ -3,6 +3,7 @@ Unit tests cho app ai_engine.
 Kiem tra model AIMusicPersona, Vectorization am thanh, KNN Recommender va cac AI API Endpoints.
 """
 
+import json
 from unittest.mock import patch
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -25,6 +26,8 @@ class AIEngineBaseTestCase(APITestCase):
     """Lop co so thiet lap du lieu kiem thu cho AI Engine."""
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.user = User.objects.create_user(username='ai_user', password='password123')
         self.client.force_authenticate(user=self.user)
 
@@ -113,6 +116,40 @@ class VectorizationAndKNNTests(AIEngineBaseTestCase):
         scores_list = [r['similarity_score'] for r in recs]
         self.assertEqual(scores_list, sorted(scores_list, reverse=True))
 
+MOCK_PERSONA_INFERENCE = (
+    {
+        "persona_title": "The Late-Night Sonic Rebel",
+        "tagline": "Đêm khuya, năng lượng bùng nổ và chiều sâu nội tâm.",
+        "vibe_summary": "Bạn thường nghe nhạc đêm muộn với gu acoustic và rock.",
+        "mood_distribution": {"energetic": 40, "melancholic": 30, "focused": 30},
+        "recommended_listening_time": "22:00 - 02:00",
+        "ai_advice": "Duy trì năng lượng tích cực này!",
+    },
+    "groq:openai/gpt-oss-20b"
+)
+
+MOCK_FACTS_AGENT_RESULT = {
+    "facts": [
+        {
+            "id": "fact-1",
+            "category": "repeat_loop",
+            "badge": "Vòng Lặp Vô Tận",
+            "title": "Cơn Nghiện Nhạc",
+            "description": "Bạn đã nghe bài hát liên tục.",
+            "metric_highlight": "5 lần",
+            "evidence": "Có Chàng Trai Viết Lên Cây",
+        }
+    ],
+    "agent_meta": {
+        "agent_name": "Aura Music Detective",
+        "provider_used": "groq:openai/gpt-oss-20b",
+        "model_name": "openai/gpt-oss-20b",
+        "iterations_used": 1,
+        "tools_called": ["query_repeat_loops"],
+        "is_fallback": False,
+    }
+}
+
 class AIPersonaGenerationTests(AIEngineBaseTestCase):
     """Kiem thu he thong sinh bao cao Persona va Heuristic Fallback."""
 
@@ -130,7 +167,8 @@ class AIPersonaGenerationTests(AIEngineBaseTestCase):
         moods = persona_data['mood_distribution']
         self.assertEqual(sum(moods.values()), 100)
 
-    def test_generate_and_save_persona_creates_db_record(self):
+    @patch('ai_engine.services.ai_persona.call_groq_inference', return_value=MOCK_PERSONA_INFERENCE)
+    def test_generate_and_save_persona_creates_db_record(self, mock_groq):
         persona_obj = generate_and_save_persona(self.user, period_type='monthly')
         
         self.assertIsInstance(persona_obj, AIMusicPersona)
@@ -147,7 +185,8 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         res = self.client.get('/api/ai/persona/latest/')
         self.assertIn(res.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
 
-    def test_persona_generate_api(self):
+    @patch('ai_engine.services.ai_persona.call_groq_inference', return_value=MOCK_PERSONA_INFERENCE)
+    def test_persona_generate_api(self, mock_groq):
         res = self.client.post('/api/ai/persona/generate/', {'period_type': 'weekly'})
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         data = res.json()
@@ -155,14 +194,22 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         self.assertIn('persona_title', data)
         self.assertIn('mood_distribution', data)
 
-    def test_persona_latest_api(self):
-        # Lan 1: chua co bao cao, he thong tu dong sinh moi
+    @patch('ai_engine.services.ai_persona.call_groq_inference', return_value=MOCK_PERSONA_INFERENCE)
+    def test_persona_latest_api(self, mock_groq):
+        # Lan 1: chua co bao cao, he thong tra ve {} (khong tu dong tao ton token)
         res = self.client.get('/api/ai/persona/latest/')
         self.assertEqual(res.status_code, status.HTTP_200_OK)
-        data = res.json()
+        self.assertEqual(res.json(), {})
+
+        # Lan 2: Sau khi nguoi dung da chu dong tao persona
+        generate_and_save_persona(self.user, 'monthly')
+        res2 = self.client.get('/api/ai/persona/latest/')
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        data = res2.json()
         self.assertIn('persona_title', data)
 
-    def test_persona_history_api(self):
+    @patch('ai_engine.services.ai_persona.call_groq_inference', return_value=MOCK_PERSONA_INFERENCE)
+    def test_persona_history_api(self, mock_groq):
         generate_and_save_persona(self.user, 'weekly')
         generate_and_save_persona(self.user, 'monthly')
         
@@ -179,8 +226,7 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         self.assertIn('recommendations', data)
         self.assertEqual(len(data['recommendations']), 2)
 
-    def test_music_facts_api_authenticated(self):
-        # Them lich su nghe nhac de test
+    def test_music_facts_preview_mode_without_trigger(self):
         from django.utils import timezone
         now = timezone.now()
         for i in range(4):
@@ -190,19 +236,185 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
                 played_at=now - timezone.timedelta(minutes=10 * i),
             )
 
+        # Duyet thong thuong (khong truyen trigger=true): Dung che do preview noi bo, 0 token AI
         res = self.client.get('/api/ai/facts/?period=week')
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         data = res.json()
         self.assertIn('facts', data)
         self.assertIn('agent_meta', data)
-        self.assertIn('period_key', data)
+        self.assertEqual(data['agent_meta']['provider_used'], 'db-analytics-preview')
+
+    @patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', return_value=MOCK_FACTS_AGENT_RESULT)
+    def test_music_facts_manual_trigger(self, mock_react):
+        from django.utils import timezone
+        now = timezone.now()
+        for i in range(4):
+            ListeningHistory.objects.create(
+                user=self.user,
+                track=self.seed_track,
+                played_at=now - timezone.timedelta(minutes=10 * i),
+            )
+
+        # Kich hoat thu cong qua trigger=true
+        res = self.client.get('/api/ai/facts/?period=week&trigger=true')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        self.assertIn('facts', data)
+        self.assertIn('agent_meta', data)
         self.assertGreater(len(data['facts']), 0)
-        self.assertIn('badge', data['facts'][0])
-        self.assertIn('title', data['facts'][0])
-        self.assertIn('metric_highlight', data['facts'][0])
+
+    def test_cascading_primary_to_backup_model(self):
+        from ai_engine.services.facts_agent.agent import run_music_facts_agent
+        from django.utils import timezone
+
+        now = timezone.now()
+        start_dt = now - timezone.timedelta(days=7)
+
+        # Gia lap Tang 1 (120B) bi loi / rate limit, Tang 2 (20B) thanh cong
+        mock_facts = [{
+            "id": "fact-1",
+            "category": "repeat_loop",
+            "badge": "Vòng Lặp Vô Tận",
+            "title": "Cơn Nghiện Nhạc",
+            "description": "Bạn đã nghe bài hát liên tục.",
+            "metric_highlight": "5 lần",
+            "evidence": "Bài hát mẫu",
+        }]
+
+        def side_effect_exec(client, model_name, user, start_dt, end_dt, period_label):
+            if '120b' in model_name:
+                return None
+            return {
+                "facts": mock_facts,
+                "agent_meta": {
+                    "agent_name": "Aura Music Detective",
+                    "provider_used": f"groq:{model_name}",
+                    "model_name": model_name,
+                    "iterations_used": 1,
+                    "tools_called": ["query_repeat_loops"],
+                    "is_fallback": False,
+                }
+            }
+
+        with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', side_effect=side_effect_exec):
+            result = run_music_facts_agent(self.user, start_dt, now)
+            self.assertIn('20b', result['agent_meta']['provider_used'])
+            self.assertFalse(result['agent_meta']['is_fallback'])
+
+    def test_cascading_all_fail_to_heuristic(self):
+        from ai_engine.services.facts_agent.agent import run_music_facts_agent
+        from django.utils import timezone
+
+        now = timezone.now()
+        start_dt = now - timezone.timedelta(days=7)
+
+        # Gia lap ca Tang 1 va Tang 2 deu that bai
+        with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', return_value=None):
+            result = run_music_facts_agent(self.user, start_dt, now)
+            self.assertEqual(result['agent_meta']['provider_used'], 'heuristic-fallback')
+            self.assertTrue(result['agent_meta']['is_fallback'])
 
     def test_music_facts_unauthenticated_rejected(self):
         self.client.logout()
         res = self.client.get('/api/ai/facts/?period=week')
         self.assertIn(res.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+
+    def test_execute_groq_react_loop_multi_tool_synthesis(self):
+        from unittest.mock import MagicMock
+        from ai_engine.services.facts_agent.agent import _execute_groq_react_loop
+        from django.utils import timezone
+
+        mock_client = MagicMock()
+        recorded_calls = []
+
+        def mock_create(**kwargs):
+            recorded_calls.append(kwargs)
+            call_count = len(recorded_calls)
+            mock_choice = MagicMock()
+
+            if call_count == 1:
+                # Turn 1: Goi tool query_repeat_loops
+                mock_tool = MagicMock()
+                mock_tool.id = "call_1"
+                mock_tool.function.name = "query_repeat_loops"
+                mock_tool.function.arguments = json.dumps({"min_repeats": 3})
+                mock_choice.message.tool_calls = [mock_tool]
+                mock_choice.message.content = None
+            elif call_count == 2:
+                # Turn 2: Goi tool query_night_owl_anomaly
+                mock_tool = MagicMock()
+                mock_tool.id = "call_2"
+                mock_tool.function.name = "query_night_owl_anomaly"
+                mock_tool.function.arguments = "{}"
+                mock_choice.message.tool_calls = [mock_tool]
+                mock_choice.message.content = None
+            elif call_count == 3:
+                # Turn 3: Goi tool query_marathon_sessions
+                mock_tool = MagicMock()
+                mock_tool.id = "call_3"
+                mock_tool.function.name = "query_marathon_sessions"
+                mock_tool.function.arguments = "{}"
+                mock_choice.message.tool_calls = [mock_tool]
+                mock_choice.message.content = None
+            else:
+                # Turn 4: Ep tong hop (tool_choice="none"), xuat Strict JSON
+                mock_choice.message.tool_calls = None
+                mock_choice.message.content = json.dumps({
+                    "facts": [
+                        {
+                            "id": "fact-1",
+                            "category": "repeat_loop",
+                            "badge": "Vong Lap Vo Tan",
+                            "title": "Nghien Nhac",
+                            "description": "Ban da nghe 10 lan.",
+                            "metric_highlight": "10 lan",
+                            "evidence": "Song A",
+                        },
+                        {
+                            "id": "fact-2",
+                            "category": "night_owl",
+                            "badge": "Cu Dem",
+                            "title": "Am Nhac Ve Dem",
+                            "description": "Ban thuong nghe luc 2h sang.",
+                            "metric_highlight": "80%",
+                            "evidence": "Song B",
+                        },
+                        {
+                            "id": "fact-3",
+                            "category": "marathon",
+                            "badge": "Chay Dua",
+                            "title": "Phien Nghe Bat Tan",
+                            "description": "Ban da nghe lien tuc 4 tieng.",
+                            "metric_highlight": "4 tieng",
+                            "evidence": "Song C",
+                        }
+                    ]
+                })
+
+            mock_resp = MagicMock()
+            mock_resp.choices = [mock_choice]
+            return mock_resp
+
+        mock_client.chat.completions.create.side_effect = mock_create
+
+        now = timezone.now()
+        start_dt = now - timezone.timedelta(days=7)
+
+        result = _execute_groq_react_loop(
+            client=mock_client,
+            model_name="openai/gpt-oss-120b",
+            user=self.user,
+            start_dt=start_dt,
+            end_dt=now,
+            period_label="tuan nay",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result["facts"]), 3)
+        self.assertFalse(result["agent_meta"]["is_fallback"])
+        self.assertEqual(result["agent_meta"]["iterations_used"], 4)
+        # Kiem tra luot thu 4 phai duoc ep tong hop voi tool_choice="none"
+        self.assertEqual(recorded_calls[3]["tool_choice"], "none")
+        self.assertEqual(recorded_calls[3]["response_format"], {"type": "json_object"})
+
 

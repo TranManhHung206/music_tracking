@@ -95,3 +95,26 @@ class SpotifyAuthAPITest(TestCase):
         self.assertIn('display_name', data)
         self.assertNotIn('encrypted_access_token', data)
         self.assertNotIn('encrypted_refresh_token', data)
+
+class UserTimezoneMiddlewareTest(TestCase):
+    def setUp(self):
+        from django.test import RequestFactory
+        from .middleware import UserTimezoneMiddleware
+        self.factory = RequestFactory()
+        self.middleware = UserTimezoneMiddleware(lambda req: timezone.get_current_timezone_name())
+
+    def test_custom_valid_timezone_header(self):
+        req = self.factory.get('/api/users/me/', HTTP_X_TIMEZONE='America/New_York')
+        tz_result = self.middleware(req)
+        self.assertEqual(tz_result, 'America/New_York')
+
+    def test_vietnam_timezone_header(self):
+        req = self.factory.get('/api/users/me/', HTTP_X_TIMEZONE='Asia/Ho_Chi_Minh')
+        tz_result = self.middleware(req)
+        self.assertEqual(tz_result, 'Asia/Ho_Chi_Minh')
+
+    def test_invalid_timezone_fallback(self):
+        req = self.factory.get('/api/users/me/', HTTP_X_TIMEZONE='Invalid/Not_A_Timezone_123')
+        tz_result = self.middleware(req)
+        self.assertIn(tz_result, ['Asia/Ho_Chi_Minh', 'UTC'])
+

@@ -90,6 +90,8 @@ def invalidate_user_analytics_cache(user_id: int):
         for metric in metrics:
             for r in ranges:
                 cache.delete(build_analytics_cache_key(user_id, metric, r))
+                for p in ['week', 'month', 'year']:
+                    cache.delete(build_analytics_cache_key(user_id, metric, f"{r}_{p}"))
                 for lim in limits:
                     cache.delete(f"{build_analytics_cache_key(user_id, metric, r)}:{lim}")
 

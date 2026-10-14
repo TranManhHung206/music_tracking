@@ -118,6 +118,12 @@ export function App() {
     localStorage.setItem('user_calendar_period_type', newType);
     localStorage.setItem('user_calendar_selected_mode', 'current');
     localStorage.removeItem('user_calendar_selected_key');
+
+    const dynamicMocks = getDynamicMockCalendarPeriods();
+    const defaultPeriod = dynamicMocks[newType]?.find((p) => p.is_current) || dynamicMocks[newType]?.[0] || null;
+    if (defaultPeriod) {
+      setSelectedPeriod(defaultPeriod);
+    }
   };
 
   const handlePeriodSelect = (period: CalendarPeriodItem) => {
@@ -159,13 +165,52 @@ export function App() {
   const [recData, setRecData] = useState<RecommendationResult | null>(null);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
+  // Anti-Spam Rate Limit Cooldown States
+  const [personaCooldown, setPersonaCooldown] = useState(0);
+  const [factsCooldown, setFactsCooldown] = useState(0);
+
+  useEffect(() => {
+    if (factsCooldown <= 0) return;
+    const timer = setTimeout(() => setFactsCooldown((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [factsCooldown]);
+
+  useEffect(() => {
+    if (personaCooldown <= 0) return;
+    const timer = setTimeout(() => setPersonaCooldown((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [personaCooldown]);
+
   // 1. Fetch User & Analytics Data tu Backend theo khoang thoi gian duoc chon
   const refreshAllData = useCallback(async (period: CalendarPeriodItem | null) => {
-    if (!user) return;
+    if (!user) {
+      if (isDemoMode) {
+        setHeatmapData((prev) => ({
+          ...prev,
+          period_type: periodType,
+        }));
+      }
+      return;
+    }
     try {
-      const timeFilter: TimeFilterInput = period
-        ? { start_date: period.start_date, end_date: period.end_date }
-        : '30d';
+      let timeFilter: TimeFilterInput = '30d';
+      if (period) {
+        if (periodType === 'month' && period.start_date && period.end_date) {
+          const s = new Date(period.start_date);
+          const e = new Date(period.end_date);
+          const diffDays = Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24));
+          if (diffDays > 32) {
+            const y = e.getFullYear();
+            const m = (e.getMonth() + 1).toString().padStart(2, '0');
+            const lastD = new Date(y, e.getMonth() + 1, 0).getDate().toString().padStart(2, '0');
+            timeFilter = { start_date: `${y}-${m}-01`, end_date: `${y}-${m}-${lastD}` };
+          } else {
+            timeFilter = { start_date: period.start_date, end_date: period.end_date };
+          }
+        } else {
+          timeFilter = { start_date: period.start_date, end_date: period.end_date };
+        }
+      }
 
       const [sum, tracks, artists, albums, radar, heatmap, weeklyComp, genres, p, history, factsRes] = await Promise.all([
         api.getSummary(timeFilter),
@@ -173,12 +218,12 @@ export function App() {
         api.getTopArtists(timeFilter, 5),
         api.getTopAlbums(timeFilter, 5),
         api.getRadar(timeFilter),
-        api.getHeatmap(timeFilter),
+        api.getHeatmap(timeFilter, periodType),
         api.getWeeklyComparison(timeFilter),
         api.getGenreDistribution(timeFilter),
         api.getLatestPersona('monthly'),
         api.getListeningHistory(20),
-        api.getMusicFacts(period?.key || 'week'),
+        api.getMusicFacts(period?.key || 'week', false, false),
       ]);
 
       setSummary(sum);
@@ -189,7 +234,7 @@ export function App() {
       setHeatmapData(heatmap);
       setWeeklyComparison(weeklyComp);
       setGenreData(genres);
-      setPersona(p);
+      if (p) setPersona(p);
       setRecentScrobbles(history);
       if (factsRes && Array.isArray(factsRes.facts)) {
         setMusicFacts(factsRes.facts);
@@ -198,7 +243,7 @@ export function App() {
     } catch {
       // Graceful fallback da xu ly trong api client
     }
-  }, [user]);
+  }, [user, isDemoMode, periodType]);
 
   // 2. Kiem tra OAuth Callback & Token khi ung dung khoi tao
   useEffect(() => {
@@ -434,12 +479,23 @@ export function App() {
       addToast('info', 'Bạn đang ở chế độ xem thử. Dữ liệu AI Persona mẫu đang hiển thị.');
       return;
     }
+    if (personaCooldown > 0) {
+      addToast('warning', `Vui lòng đợi ${personaCooldown}s trước khi phân tích lại.`);
+      return;
+    }
 
     setIsGeneratingPersona(true);
     try {
       const newPersona = await api.generatePersona('monthly');
-      setPersona(newPersona);
-      addToast('success', 'Đã phân tích và cập nhật AI Persona mới thành công!');
+      if (newPersona) {
+        setPersona(newPersona);
+        setPersonaCooldown(15);
+        if (newPersona.provider_used?.includes('backup')) {
+          addToast('info', 'Đã phân tích AI Persona thành công qua model dự phòng (Groq 20B)!');
+        } else {
+          addToast('success', 'Đã phân tích và cập nhật AI Persona mới thành công!');
+        }
+      }
     } catch {
       addToast('error', 'Không thể tạo AI Persona. Vui lòng kiểm tra API Key.');
     } finally {
@@ -452,14 +508,25 @@ export function App() {
       addToast('info', 'Bạn đang ở chế độ xem thử. Dữ liệu sự thật âm nhạc mẫu đang hiển thị.');
       return;
     }
+    if (factsCooldown > 0) {
+      addToast('warning', `Vui lòng đợi ${factsCooldown}s trước khi điều tra lại.`);
+      return;
+    }
 
     setIsLoadingFacts(true);
     try {
-      const res = await api.getMusicFacts(selectedPeriod?.key || 'week', true);
+      const res = await api.getMusicFacts(selectedPeriod?.key || 'week', true, true);
       if (res && Array.isArray(res.facts)) {
         setMusicFacts(res.facts);
         setAgentMeta(res.agent_meta);
-        addToast('success', 'Aura Detective Agent đã điều tra và cập nhật các sự thật mới!');
+        setFactsCooldown(15);
+        if (res.agent_meta?.provider_used?.includes('backup')) {
+          addToast('info', 'Aura Detective Agent đã dùng model dự phòng (Groq 20B) để điều tra thành công!');
+        } else if (res.agent_meta?.provider_used?.includes('groq')) {
+          addToast('success', 'Aura Detective Agent đã điều tra và cập nhật các sự thật mới!');
+        } else {
+          addToast('info', 'AI đang hồi phục hạn mức, hệ thống đã dùng phân tích nội bộ tìm ra các sự thật này.');
+        }
       }
     } catch {
       addToast('error', 'Không thể làm mới sự thật âm nhạc lúc này.');
@@ -639,6 +706,7 @@ export function App() {
                   isGenerating={isGeneratingPersona}
                   onRegenerate={handleRegeneratePersona}
                   onOpenShareModal={() => setIsShareModalOpen(true)}
+                  cooldownSeconds={personaCooldown}
                 />
               </section>
 
@@ -650,6 +718,7 @@ export function App() {
                   periodLabel={selectedPeriod ? selectedPeriod.label : 'Tuần này'}
                   isLoading={isLoadingFacts}
                   onRefresh={handleRefreshFacts}
+                  cooldownSeconds={factsCooldown}
                 />
               </section>
 
@@ -659,7 +728,13 @@ export function App() {
                   <RadarChartComponent data={radarData.features} />
                 </div>
                 <div className="lg:col-span-7 flex">
-                  <ListeningHeatmap data={heatmapData.matrix} />
+                  <ListeningHeatmap
+                    data={heatmapData.matrix}
+                    periodType={periodType}
+                    monthCalendar={heatmapData.month_calendar}
+                    yearCalendar={heatmapData.year_calendar}
+                    selectedPeriodLabel={selectedPeriod?.label}
+                  />
                 </div>
               </section>
 

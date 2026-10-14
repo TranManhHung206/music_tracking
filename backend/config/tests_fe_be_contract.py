@@ -400,7 +400,10 @@ class FrontendBackendContractTests(APITestCase):
             '/api/analytics/heatmap/',
             '/api/analytics/genres/',
             '/api/analytics/periods/',
+            '/api/analytics/top-albums/',
+            '/api/analytics/weekly-comparison/',
             '/api/ai/persona/latest/',
+            '/api/ai/facts/',
         ]
 
         for url in protected_urls:
@@ -410,3 +413,85 @@ class FrontendBackendContractTests(APITestCase):
                 status.HTTP_401_UNAUTHORIZED,
                 f"Endpoint {url} khong chan truy cap nac danh (HTTP {res.status_code})"
             )
+
+    # -------------------------------------------------------------------------
+    # 10. HOP DONG AI MUSIC DETECTIVE FUN FACTS (/api/ai/facts/)
+    # -------------------------------------------------------------------------
+    def test_contract_ai_music_facts(self):
+        """Kiem tra payload hop dong cua Aura Music Detective Fun Facts."""
+        self.client.force_authenticate(user=self.user)
+        res = self.client.get('/api/ai/facts/?period=week')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+
+        # 1. Kiem tra top-level keys
+        self.assertIn('facts', data)
+        self.assertIn('agent_meta', data)
+        self.assertTrue(isinstance(data['facts'], list))
+
+        # 2. Kiem tra schema tung Fact item
+        required_fact_fields = ['id', 'category', 'badge', 'title', 'description', 'metric_highlight', 'evidence']
+        for fact in data['facts']:
+            for field in required_fact_fields:
+                self.assertIn(field, fact, f"Thieu truong '{field}' trong MusicFact")
+            # Kiem tra quy tac khong dung emoji
+            for k in ['badge', 'title', 'description', 'metric_highlight']:
+                val = str(fact[k])
+                self.assertFalse(any(ord(c) > 0x1F600 for c in val), f"Phat hien emoji trong {k}: {val}")
+            # Kiem tra xung ho than thien: khong chua 'người dùng'
+            self.assertNotIn('người dùng', fact['description'].lower())
+            self.assertNotIn('thính giả', fact['description'].lower())
+
+        # 3. Kiem tra agent_meta
+        meta = data['agent_meta']
+        self.assertIn('agent_name', meta)
+        self.assertIn('provider_used', meta)
+        self.assertIn('tools_called', meta)
+        self.assertTrue(isinstance(meta['tools_called'], list))
+
+    # -------------------------------------------------------------------------
+    # 11. HOP DONG MÚI GIỜ ĐỘNG (X-Timezone Header Contract)
+    # -------------------------------------------------------------------------
+    def test_contract_dynamic_user_timezone(self):
+        """Kiem tra Backend chap nhan header X-Timezone tu Frontend khong loi CORS."""
+        self.client.force_authenticate(user=self.user)
+        # Goi voi timezone Tokyo
+        res_tokyo = self.client.get('/api/ai/facts/?period=week', HTTP_X_TIMEZONE='Asia/Tokyo')
+        self.assertEqual(res_tokyo.status_code, status.HTTP_200_OK)
+
+        # Goi voi timezone New York
+        res_ny = self.client.get('/api/analytics/summary/?time_range=30d', HTTP_X_TIMEZONE='America/New_York')
+        self.assertEqual(res_ny.status_code, status.HTTP_200_OK)
+
+        # Goi voi timezone Viet Nam
+        res_vn = self.client.get('/api/analytics/weekly-comparison/?time_range=7d', HTTP_X_TIMEZONE='Asia/Ho_Chi_Minh')
+        self.assertEqual(res_vn.status_code, status.HTTP_200_OK)
+
+    # -------------------------------------------------------------------------
+    # 12. HOP DONG TOP ALBUMS VA WEEKLY COMPARISON
+    # -------------------------------------------------------------------------
+    def test_contract_top_albums_and_weekly_comparison(self):
+        """Kiem tra chi tiet payload Top Albums va Weekly Comparison."""
+        self.client.force_authenticate(user=self.user)
+        # Top Albums
+        res_alb = self.client.get('/api/analytics/top-albums/?time_range=30d&limit=5')
+        self.assertEqual(res_alb.status_code, status.HTTP_200_OK)
+        alb_data = res_alb.json()
+        self.assertIn('albums', alb_data)
+        for alb in alb_data['albums']:
+            for k in ['spotify_id', 'name', 'image_url', 'artists', 'play_count']:
+                self.assertIn(k, alb)
+
+        # Weekly Comparison
+        res_wc = self.client.get('/api/analytics/weekly-comparison/?time_range=7d')
+        self.assertEqual(res_wc.status_code, status.HTTP_200_OK)
+        wc_data = res_wc.json()
+        self.assertIn('days', wc_data)
+        self.assertIn('summary', wc_data)
+        self.assertEqual(len(wc_data['days']), 7)
+        for day in wc_data['days']:
+            for k in ['day_name', 'current_week_plays', 'previous_week_plays']:
+                self.assertIn(k, day)
+        for sk in ['total_current_week', 'total_previous_week', 'growth_percentage', 'peak_day_current']:
+            self.assertIn(sk, wc_data['summary'])
+

@@ -13,7 +13,10 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 
 ### 2. Bảng Điều Khiển Phân Tích Trực Quan
 * Biểu đồ Radar Đặc tính Âm thanh: Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc chuẩn xác BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát.
-* Bản đồ Nhiệt 24x7: Trực quan hóa mật độ nghe nhạc theo từng khung giờ trong ngày và từng ngày trong tuần.
+* Bản Đồ Nhiệt Thích Ứng Đa Chu Kỳ (Adaptive Calendar Heatmap): Tự động chuyển đổi giao diện linh hoạt và tối ưu theo chu kỳ thời gian:
+  * Chu kỳ Tuần (Week): Ma trận 7 ngày x 24 giờ phân tích nhịp sinh học và khung giờ vàng nghe nhạc trong tuần.
+  * Chu kỳ Tháng (Month): Lịch Bàn Tháng (Monthly Calendar Grid 7 cột x 5 hàng) hiển thị trực quan cường độ nghe nhạc của từng ngày từ ngày 1 đến 28..31, đệm đúng thứ đầu tháng, kèm số liệu ngày đỉnh cao và tỷ lệ ngày hoạt động.
+  * Chu kỳ Năm (Year): Bản đồ hoạt động cả năm dạng Annual Activity Graph (53 tuần x 7 ngày) phong cách GitHub / Spotify Wrapped, bố cục thanh thoát kèm thanh cuộn mượt mà, phân định 12 tháng rõ ràng và bảng chỉ số chuỗi nghe liên tục (Streak), tháng bùng nổ nhất và ngày đỉnh cao.
 * So Sánh Lượt Nghe Theo Tuần: Biểu đồ cột trực quan so sánh số lượt nghe mỗi ngày giữa tuần này và tuần trước kèm thông số tăng trưởng.
 * Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification): Kết hợp thông minh giữa nhận diện khu vực địa phương (hợp nhất chuẩn hóa V-Pop, K-Pop) và phân loại chuyên sâu bằng chỉ số sóng âm thanh DSP đối với các dòng nhạc quốc tế (EDM / Electronic, Phonk / High Energy, Acoustic / Lo-Fi, Hip-Hop / Rap, US-UK / Pop, Global Pop).
 * Bảng Xếp Hạng Toàn Diện: Theo dõi Top Bài Hát, Top Nghệ Sĩ (đồng bộ ảnh chân dung chính chủ từ Spotify Web API theo mã định danh spotify_id riêng biệt) và Top Album được nghe nhiều nhất.
@@ -27,6 +30,12 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 ### 4. AI Music Persona & Agentic AI Thám Tử Âm Nhạc
 * Hồ sơ Tính cách Âm nhạc AI: Tích hợp mô hình AI (Groq hoặc Google Gemini) để phân tích tâm lý, cảm xúc nghe nhạc, khung giờ thưởng thức lý tưởng và lời khuyên âm nhạc dành riêng cho bạn.
 * Thám Tử Âm Nhạc Agentic AI (Aura Music Detective): Tích hợp Groq Function Calling (chu trình ReAct: Thought - Tool Call - Synthesis) kết hợp bộ khung điều khiển Harness an toàn. Agent tự động gọi các công cụ truy vấn cơ sở dữ liệu để tìm kiếm các sự thật âm nhạc bất ngờ (cày lặp bài hát, thói quen cú đêm, phiên nghe marathon, độ trung thành nghệ sĩ, cú nhảy năng lượng đột ngột) kèm số liệu và bằng chứng thực tế.
+* Kiến Trúc LLM 3 Tầng Dự Phòng Tự Phục Hồi (Cascading Multi-Tier Architecture):
+  * Tầng 1 (Primary): `openai/gpt-oss-120b` đảm bảo năng lực suy luận sâu sắc nhất.
+  * Tầng 2 (Backup): `openai/gpt-oss-20b` sở hữu hạn mức token riêng biệt, tự động kích hoạt ngay khi Tầng 1 gặp lỗi Rate Limit 429 hoặc quá tải.
+  * Tầng 3 (Fallback Engine): Thuật toán thống kê nội bộ tự động kích hoạt nếu cả hai model AI đều bận, đảm bảo giao diện luôn phản hồi mượt mà và không gián đoạn.
+* Cơ Chế Kích Hoạt Thủ Công (On-Demand / Zero-Token Browsing): Quá trình lướt web, đổi chu kỳ tuần/tháng/năm chỉ hiển thị bản xem trước từ cơ sở dữ liệu (0 token AI). Chỉ khi người dùng chủ động nhấn nút "Kích hoạt Thám tử AI" hoặc "Phân tích lại cá tính", hệ thống mới gọi API.
+* Phòng Vệ Rate Limit (Circuit Breaker & Cooldown 15s): Tự động ngắt mạch (Circuit Breaker) trong 60 giây khi gặp lỗi 429 để tránh spam vô ích, kết hợp bộ đếm đếm lùi 15 giây chống nhấn đúp vượt ngưỡng 8,000 TPM.
 * Gợi ý Bài hát Thông minh: Sử dụng thuật toán Machine Learning (KNN) để tìm kiếm và đề xuất các bài hát có giai điệu, phong cách tương đồng nhất với sở thích của bạn.
 
 
