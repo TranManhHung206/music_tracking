@@ -5,6 +5,7 @@ phuc vu Aura Music Detective Agent dieu tra lich su nghe nhac.
 """
 
 from datetime import timedelta
+from django.utils import timezone
 from django.db.models import Count
 from django.db.models.functions import ExtractHour, TruncDate
 from tracker.models import ListeningHistory, Artist
@@ -14,12 +15,13 @@ def query_repeat_loops(user, start_dt, end_dt, min_repeats: int = 3) -> dict:
     Tim kiem cac bai hat duoc nguoi dung nghe lap lai nhieu lan trong cung mot ngay.
     Tra ve danh sach cac bai hat bi 'nghien lap lai' (Repeat Loops).
     """
+    user_tz = timezone.get_current_timezone()
     qs = (
         ListeningHistory.objects.filter(
             user=user,
             played_at__range=(start_dt, end_dt),
         )
-        .annotate(play_date=TruncDate('played_at'))
+        .annotate(play_date=TruncDate('played_at', tzinfo=user_tz))
         .values('track__name', 'track__id', 'play_date')
         .annotate(daily_count=Count('id'))
         .filter(daily_count__gte=min_repeats)
@@ -67,12 +69,13 @@ def query_night_owl_anomaly(user, start_dt, end_dt) -> dict:
     if total_plays == 0:
         return {"tool_name": "query_night_owl_anomaly", "has_data": False, "total_plays": 0}
 
+    user_tz = timezone.get_current_timezone()
     night_records = (
         ListeningHistory.objects.filter(
             user=user,
             played_at__range=(start_dt, end_dt),
         )
-        .annotate(play_hour=ExtractHour('played_at'))
+        .annotate(play_hour=ExtractHour('played_at', tzinfo=user_tz))
         .filter(play_hour__gte=0, play_hour__lt=5)
     )
 
@@ -169,15 +172,18 @@ def query_marathon_sessions(user, start_dt, end_dt, max_gap_minutes: int = 20) -
 
     hours = round(max_session_duration_sec / 3600, 1)
 
+    local_start = timezone.localtime(max_session_start) if max_session_start else None
+    local_end = timezone.localtime(max_session_end) if max_session_end else None
+
     return {
         "tool_name": "query_marathon_sessions",
         "has_data": max_session_count >= 5,
         "max_tracks_count": max_session_count,
         "duration_hours": hours,
-        "session_date": max_session_start.strftime('%d/%m/%Y') if max_session_start else "Trong kỳ",
+        "session_date": local_start.strftime('%d/%m/%Y') if local_start else "Trong kỳ",
         "time_window": (
-            f"{max_session_start.strftime('%H:%M')} - {max_session_end.strftime('%H:%M')}"
-            if max_session_start and max_session_end else ""
+            f"{local_start.strftime('%H:%M')} - {local_end.strftime('%H:%M')}"
+            if local_start and local_end else ""
         ),
     }
 

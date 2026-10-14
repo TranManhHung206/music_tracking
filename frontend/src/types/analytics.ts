@@ -53,10 +53,66 @@ export interface HeatmapCell {
   count: number;
 }
 
+export interface MonthHeatmapDay {
+  date: string;
+  day_number: number;
+  day_of_week: number;
+  count: number;
+  is_current_month: boolean;
+}
+
+export interface MonthHeatmapData {
+  year: number;
+  month: number;
+  first_day_weekday: number;
+  total_days: number;
+  total_plays: number;
+  peak_day: string;
+  peak_plays: number;
+  active_days: number;
+  max_density: number;
+  days: MonthHeatmapDay[];
+}
+
+export interface YearHeatmapDay {
+  date: string;
+  month: number;
+  day_number: number;
+  day_of_week: number;
+  week_index: number;
+  count: number;
+  is_in_range: boolean;
+}
+
+export interface YearMonthHeader {
+  month: number;
+  label: string;
+  start_week: number;
+}
+
+export interface YearHeatmapData {
+  year: number;
+  total_weeks: number;
+  total_days: number;
+  total_plays: number;
+  peak_day: string;
+  peak_plays: number;
+  active_days: number;
+  longest_streak: number;
+  top_month: number;
+  top_month_plays: number;
+  max_density: number;
+  months_header: YearMonthHeader[];
+  days: YearHeatmapDay[];
+}
+
 export interface HeatmapData {
   time_range: string;
+  period_type?: 'week' | 'month' | 'year';
   max_density: number;
   matrix: HeatmapCell[];
+  month_calendar?: MonthHeatmapData;
+  year_calendar?: YearHeatmapData;
 }
 
 export interface RankingEntry {

@@ -124,20 +124,22 @@ class RadarFeaturesAnalyticsView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 class HeatmapAnalyticsView(APIView):
-    """API lay ma tran mat do nghe nhac 7 ngay x 24 gio."""
+    """API lay ma tran mat do nghe nhac 7 ngay x 24 gio hoac lich thang/nam."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         time_range = request.query_params.get('time_range', '30d')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
+        period_type = request.query_params.get('period_type')
 
         start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
-        cache_key = build_analytics_cache_key(request.user.id, 'heatmap', range_key)
+        cache_suffix = f"{range_key}_{period_type}" if period_type else range_key
+        cache_key = build_analytics_cache_key(request.user.id, 'heatmap', cache_suffix)
         ttl = get_cache_ttl_for_range(range_key)
 
         def compute():
-            return get_listening_heatmap(request.user, start_dt, end_dt, time_range_label=range_key)
+            return get_listening_heatmap(request.user, start_dt, end_dt, time_range_label=range_key, period_type=period_type)
 
         result = get_or_set_cached_metric(cache_key, ttl, compute)
         return Response(result, status=status.HTTP_200_OK)

@@ -7,6 +7,7 @@ Kiem soat chat che bang Harness Guardrails: Loop Budget, Tool Whitelist va Verif
 import json
 import logging
 from django.conf import settings
+from django.core.cache import cache
 from .harness import (
     GROQ_TOOL_DEFINITIONS,
     execute_agent_tool,
@@ -23,9 +24,10 @@ Nhiệm vụ của bạn: Sử dụng các công cụ được cung cấp để 
 Các quy tắc bắt buộc nghiêm ngặt:
 1. XƯNG HÔ THÂN THIỆN: Tuyệt đối CẤM dùng từ "người dùng", "thính giả" hoặc "họ". Bạn BẮT BUỘC phải xưng hô trực tiếp là "bạn" (ví dụ: "Bạn đã cày liên tục...", "Bạn dành trọn 80% thời gian cho...", "Gu nghe nhạc của bạn..."). Hãy trò chuyện thân mật, truyền cảm hứng như người bạn thân âm nhạc (Spotify Wrapped).
 2. SỐ LƯỢNG: Bạn BẮT BUỘC phải trả về đúng 3 sự thật âm nhạc khác nhau (3 facts). Hãy gọi từ 2 đến 3 công cụ khác nhau để thu thập đủ dữ liệu đa dạng.
-3. CHỈ CHỌN HÀNH VI TÍCH CỰC & NỔI BẬT: Mọi sự thật bạn đưa ra BẮT BUỘC phải dựa trên hành vi nghe thực tế đã diễn ra. Tuyệt đối KHÔNG tạo các sự thật phủ định vô nghĩa (như "bạn không nghe bài nào lúc 3h sáng", "tỷ lệ 0%", "không phát bài nào"). Nếu một công cụ trả về 0 hoặc không có điểm nhấn, hãy chuyển sang gọi công cụ khác.
-4. TUYỆT ĐỐI KHÔNG DÙNG EMOJI hoặc icon ký tự nào ở bất kỳ đâu.
-5. Khi đã thu thập đủ dữ liệu, hãy trả về kết quả cuối cùng ở định dạng Strict JSON thuần túy (không bọc trong markdown ```json) với cấu trúc:
+3. CHỈ ĐƯỢC GỌI CÔNG CỤ TRONG DANH SÁCH: Tuyệt đối CHỈ ĐƯỢC PHÉP gọi các công cụ đã được cung cấp (query_repeat_loops, query_night_owl_habits, query_marathon_sessions, query_artist_dominance, query_genre_contrast). Tuyệt đối CẤM tự ý bịa hoặc gọi các công cụ không có trong danh sách như commentary, thought, analysis.
+4. CHỈ CHỌN HÀNH VI TÍCH CỰC & NỔI BẬT: Mọi sự thật bạn đưa ra BẮT BUỘC phải dựa trên hành vi nghe thực tế đã diễn ra. Tuyệt đối KHÔNG tạo các sự thật phủ định vô nghĩa (như "bạn không nghe bài nào lúc 3h sáng", "tỷ lệ 0%", "không phát bài nào"). Nếu một công cụ trả về 0 hoặc không có điểm nhấn, hãy chuyển sang gọi công cụ khác.
+5. TUYỆT ĐỐI KHÔNG DÙNG EMOJI hoặc icon ký tự nào ở bất kỳ đâu.
+6. Khi đã thu thập đủ dữ liệu, hãy trả về kết quả cuối cùng ở định dạng Strict JSON thuần túy (không bọc trong markdown ```json) với cấu trúc:
 {
   "facts": [
     {
@@ -41,17 +43,137 @@ Các quy tắc bắt buộc nghiêm ngặt:
 }
 """
 
+def is_model_rate_limited(model_name: str) -> bool:
+    """Kiem tra xem model co dang bi khoa boi Circuit Breaker do 429 khong."""
+    return bool(cache.get(f"groq_circuit_breaker:{model_name}"))
+
+def mark_model_rate_limited(model_name: str, cooldown_seconds: int = 60) -> None:
+    """Danh dau model bi khoa tam thoi de chuyen ngay sang tier ke tiep."""
+    cache.set(f"groq_circuit_breaker:{model_name}", True, timeout=cooldown_seconds)
+
+def _execute_groq_react_loop(client, model_name: str, user, start_dt, end_dt, period_label: str) -> dict | None:
+    """
+    Thuc thi 1 luot ReAct Loop tren model Groq cu the.
+    Tra ve ket qua dict facts neu thanh cong, hoac None neu that bai / rate limit.
+    """
+    user_name = user.get_full_name() or user.first_name or user.username
+    messages = [
+        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": f"Hãy điều tra lịch sử nghe nhạc của bạn ({user_name}) {period_label} để tìm ra chính xác 3 sự thật âm nhạc nổi bật, tích cực và thú vị nhất.",
+        },
+    ]
+
+    tools_called = []
+    max_iterations = 5
+    iterations_used = 0
+
+    try:
+        for iteration in range(max_iterations):
+            iterations_used += 1
+
+            # Ep model phai tong hop JSON o luot cuoi hoac khi da goi tu 3 cong cu tro len
+            force_synthesis = (iteration == max_iterations - 1) or (len(tools_called) >= 3)
+
+            request_params = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": 0.6,
+            }
+
+            if force_synthesis:
+                request_params["tools"] = GROQ_TOOL_DEFINITIONS
+                request_params["tool_choice"] = "none"
+                request_params["response_format"] = {"type": "json_object"}
+            else:
+                request_params["tools"] = GROQ_TOOL_DEFINITIONS
+                request_params["tool_choice"] = "auto"
+
+            chat_completion = client.chat.completions.create(**request_params)
+
+            response_message = chat_completion.choices[0].message
+            messages.append(response_message)
+
+            if response_message.tool_calls and not force_synthesis:
+                for tool_call in response_message.tool_calls:
+                    fn_name = tool_call.function.name
+                    tools_called.append(fn_name)
+
+                    try:
+                        fn_args = json.loads(tool_call.function.arguments or "{}")
+                    except Exception:
+                        fn_args = {}
+
+                    tool_output = execute_agent_tool(fn_name, fn_args, user, start_dt, end_dt)
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": fn_name,
+                        "content": json.dumps(tool_output, ensure_ascii=False),
+                    })
+            else:
+                content = response_message.content or "{}"
+                if content.startswith("```"):
+                    lines = content.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    content = "\n".join(lines).strip()
+
+                try:
+                    parsed_data = json.loads(content)
+                    raw_facts = parsed_data.get("facts", [])
+                except Exception:
+                    raw_facts = []
+
+                verified_facts = sanitize_and_verify_facts(raw_facts)
+
+                if verified_facts:
+                    if len(verified_facts) < 3:
+                        extra_facts = generate_heuristic_facts(user, start_dt, end_dt)
+                        existing_cats = {f["category"] for f in verified_facts}
+                        for extra in extra_facts:
+                            if extra["category"] not in existing_cats and len(verified_facts) < 3:
+                                verified_facts.append(extra)
+                                existing_cats.add(extra["category"])
+
+                    return {
+                        "facts": verified_facts,
+                        "agent_meta": {
+                            "agent_name": "Aura Music Detective",
+                            "provider_used": f"groq:{model_name}",
+                            "model_name": model_name,
+                            "iterations_used": iterations_used,
+                            "tools_called": list(set(tools_called)),
+                            "is_fallback": False,
+                        }
+                    }
+                break
+
+    except Exception as e:
+        err_msg = str(e)
+        if "429" in err_msg or "rate_limit" in err_msg.lower():
+            logger.warning(f"Model {model_name} bi cham nguong Rate Limit (429): {err_msg}. Kich hoat Circuit Breaker 60 giay.")
+            mark_model_rate_limited(model_name, cooldown_seconds=60)
+        else:
+            logger.warning(f"Su co trong ReAct loop cua model {model_name}: {err_msg}")
+        return None
+
+    return None
+
 def run_music_facts_agent(user, start_dt, end_dt, period_label: str = "trong kỳ") -> dict:
     """
-    Thuc thi Agentic AI tim kiem Music Fun Facts:
-    1. Khoi tao phien hoi thoai voi Groq LLM.
-    2. Vong lap ReAct voi Loop Budget toi da 3 iterations.
-    3. Thuc thi Tool calls thong qua Harness Sandbox.
-    4. Verification Gate kiem tra chat che ket qua dau ra.
-    5. Fallback Heuristic Engine tu dong neu gap bat ky su co nao.
+    Thuc thi Agentic AI tim kiem Music Fun Facts voi kien truc du phong 3 tang:
+    1. Tang 1 (Primary): AI_MODEL_GROQ (openai/gpt-oss-120b).
+    2. Tang 2 (Backup): AI_MODEL_GROQ_BACKUP (openai/gpt-oss-20b).
+    3. Tang 3 (Fallback): Heuristic Engine tinh toan truc tiep tu DB.
     """
     groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or ''
-    model_name = getattr(settings, 'AI_MODEL_GROQ', 'openai/gpt-oss-120b')
+    model_primary = getattr(settings, 'AI_MODEL_GROQ', 'openai/gpt-oss-120b')
+    model_backup = getattr(settings, 'AI_MODEL_GROQ_BACKUP', 'openai/gpt-oss-20b')
 
     # Neu chua cau hinh Groq API key, kich hoat ngay Fallback Heuristic
     if not groq_api_key:
@@ -72,105 +194,50 @@ def run_music_facts_agent(user, start_dt, end_dt, period_label: str = "trong k�
     from groq import Groq
     client = Groq(api_key=groq_api_key)
 
-    user_name = user.get_full_name() or user.first_name or user.username
-    messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": f"Hãy điều tra lịch sử nghe nhạc của bạn ({user_name}) {period_label} để tìm ra chính xác 3 sự thật âm nhạc nổi bật, tích cực và thú vị nhất.",
-        },
-    ]
+    # 1. Thu nghiem Tang 1: Model Primary (120B)
+    if not is_model_rate_limited(model_primary):
+        logger.info(f"Khoi chay Tang 1 voi model chinh: {model_primary}")
+        result_primary = _execute_groq_react_loop(
+            client=client,
+            model_name=model_primary,
+            user=user,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            period_label=period_label,
+        )
+        if result_primary:
+            return result_primary
+    else:
+        logger.info(f"Tang 1 ({model_primary}) dang trong Circuit Breaker Cooldown, bo qua.")
 
-    tools_called = []
-    max_iterations = 3
-    iterations_used = 0
+    # 2. Thu nghiem Tang 2: Model Backup (20B)
+    if not is_model_rate_limited(model_backup):
+        logger.info(f"Tang 1 that bai hoac rate limited. Kich hoat Tang 2 du phong: {model_backup}")
+        result_backup = _execute_groq_react_loop(
+            client=client,
+            model_name=model_backup,
+            user=user,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            period_label=period_label,
+        )
+        if result_backup:
+            result_backup["agent_meta"]["provider_used"] = f"groq:{model_backup} (backup)"
+            return result_backup
+    else:
+        logger.info(f"Tang 2 ({model_backup}) cung dang trong Circuit Breaker Cooldown, bo qua.")
 
-    try:
-        for iteration in range(max_iterations):
-            iterations_used += 1
-
-            chat_completion = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                tools=GROQ_TOOL_DEFINITIONS,
-                tool_choice="auto",
-                temperature=0.6,
-            )
-
-            response_message = chat_completion.choices[0].message
-            messages.append(response_message)
-
-            # Kiem tra neu Model yeu cau goi Tool
-            if response_message.tool_calls:
-                for tool_call in response_message.tool_calls:
-                    fn_name = tool_call.function.name
-                    tools_called.append(fn_name)
-
-                    try:
-                        fn_args = json.loads(tool_call.function.arguments or "{}")
-                    except Exception:
-                        fn_args = {}
-
-                    tool_output = execute_agent_tool(fn_name, fn_args, user, start_dt, end_dt)
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": fn_name,
-                        "content": json.dumps(tool_output, ensure_ascii=False),
-                    })
-            else:
-                # Model da tong hop xong ket qua cuoi cung
-                content = response_message.content or "{}"
-                # Loai bo markdown code blocks neu co
-                if content.startswith("```"):
-                    lines = content.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    content = "\n".join(lines).strip()
-
-                parsed_data = json.loads(content)
-                raw_facts = parsed_data.get("facts", [])
-                verified_facts = sanitize_and_verify_facts(raw_facts)
-
-                if verified_facts:
-                    # Neu model tra ve it hon 3 facts, bu dap bang heuristic de luon du 3 the
-                    if len(verified_facts) < 3:
-                        extra_facts = generate_heuristic_facts(user, start_dt, end_dt)
-                        existing_cats = {f["category"] for f in verified_facts}
-                        for extra in extra_facts:
-                            if extra["category"] not in existing_cats and len(verified_facts) < 3:
-                                verified_facts.append(extra)
-                                existing_cats.add(extra["category"])
-
-                    return {
-                        "facts": verified_facts,
-                        "agent_meta": {
-                            "agent_name": "Aura Music Detective",
-                            "provider_used": "groq",
-                            "model_name": model_name,
-                            "iterations_used": iterations_used,
-                            "tools_called": list(set(tools_called)),
-                            "is_fallback": False,
-                        }
-                    }
-                break
-
-    except Exception as e:
-        logger.warning(f"Su co trong vong lap Groq Agent: {e}. Chuyen doi sang Fallback Heuristic Engine.")
-
-    # Fallback an toan khi gap bat ky loi nao
+    # 3. Tang 3: Fallback Heuristic Engine
+    logger.warning("Ca 2 tang model Groq deu khong kha dung. Chuyen sang Tang 3: Fallback Heuristic Engine.")
     fallback_facts = generate_heuristic_facts(user, start_dt, end_dt)
     return {
         "facts": fallback_facts,
         "agent_meta": {
             "agent_name": "Aura Music Detective",
             "provider_used": "heuristic-fallback",
-            "model_name": model_name,
-            "iterations_used": iterations_used,
-            "tools_called": list(set(tools_called)),
+            "model_name": "db-analytics-heuristic",
+            "iterations_used": 0,
+            "tools_called": ["direct_db_queries"],
             "is_fallback": True,
         }
     }

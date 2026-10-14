@@ -4,11 +4,12 @@ Thuc thi cac truy van tong hop hieu nang cao cap Database bang Django ORM:
 Summary, Top Tracks, Top Artists, Audio Features Radar, Listening Heatmap va Bar Chart Race.
 """
 
-from datetime import timedelta
+import calendar
+from datetime import timedelta, date
 from collections import defaultdict
 from django.utils import timezone
 from django.db.models import Count, Avg, Sum, F
-from django.db.models.functions import ExtractIsoWeekDay, ExtractHour, ExtractYear, ExtractMonth
+from django.db.models.functions import ExtractIsoWeekDay, ExtractHour, ExtractYear, ExtractMonth, TruncDate
 from tracker.models import ListeningHistory, Track, Artist, Album
 
 DAY_NAMES = {
@@ -419,13 +420,153 @@ def get_radar_features(user, start_dt, end_dt, time_range_label: str = '30d') ->
         "features": features,
     }
 
-def get_listening_heatmap(user, start_dt, end_dt, time_range_label: str = '30d') -> dict:
-    """Trích xuất ma trận mật độ nghe nhạc 7 ngày trong tuần x 24 giờ trong ngày."""
+def _build_month_calendar(start_date: date, end_date: date, daily_map: dict) -> dict:
+    """Xay dung du lieu lich thang (gioi han nghiem ngat dung 1 thang tu ngay 1 den ngay cuoi thang)."""
+    month_start = date(start_date.year, start_date.month, 1)
+    last_day_num = calendar.monthrange(start_date.year, start_date.month)[1]
+    month_end = date(start_date.year, start_date.month, last_day_num)
+
+    curr = month_start
+    days = []
+    max_count = 0
+    total_plays = 0
+    peak_day = None
+    peak_plays = 0
+    active_days = 0
+
+    first_day_weekday = month_start.isoweekday()
+
+    while curr <= month_end:
+        cnt = daily_map.get(curr, 0)
+        total_plays += cnt
+        if cnt > 0:
+            active_days += 1
+        if cnt > peak_plays:
+            peak_plays = cnt
+            peak_day = curr.strftime('%Y-%m-%d')
+        if cnt > max_count:
+            max_count = cnt
+
+        days.append({
+            "date": curr.strftime('%Y-%m-%d'),
+            "day_number": curr.day,
+            "day_of_week": curr.isoweekday(),
+            "count": cnt,
+            "is_current_month": True,
+        })
+        curr += timedelta(days=1)
+
+    return {
+        "year": start_date.year,
+        "month": start_date.month,
+        "first_day_weekday": first_day_weekday,
+        "total_days": len(days),
+        "total_plays": total_plays,
+        "peak_day": peak_day or (month_start.strftime('%Y-%m-%d') if days else ""),
+        "peak_plays": peak_plays,
+        "active_days": active_days,
+        "max_density": max_count,
+        "days": days,
+    }
+
+def _build_year_calendar(start_date: date, end_date: date, daily_map: dict) -> dict:
+    """Xay dung du lieu lich nam (53 tuan x 7 ngay) dang contribution graph."""
+    monday_start = start_date - timedelta(days=start_date.isoweekday() - 1)
+    sunday_end = end_date + timedelta(days=7 - end_date.isoweekday())
+
+    curr = monday_start
+    days = []
+    max_count = 0
+    total_plays = 0
+    peak_day = None
+    peak_plays = 0
+    active_days = 0
+    current_streak = 0
+    max_streak = 0
+
+    months_seen = set()
+    months_header = []
+    month_plays = defaultdict(int)
+
+    while curr <= sunday_end:
+        week_idx = (curr - monday_start).days // 7
+        is_in_range = (start_date <= curr <= end_date)
+        cnt = daily_map.get(curr, 0) if is_in_range else 0
+
+        if is_in_range:
+            total_plays += cnt
+            month_plays[curr.month] += cnt
+            if cnt > 0:
+                active_days += 1
+                current_streak += 1
+                if current_streak > max_streak:
+                    max_streak = current_streak
+            else:
+                current_streak = 0
+
+            if cnt > peak_plays:
+                peak_plays = cnt
+                peak_day = curr.strftime('%Y-%m-%d')
+            if cnt > max_count:
+                max_count = cnt
+
+            if curr.month not in months_seen:
+                months_seen.add(curr.month)
+                months_header.append({
+                    "month": curr.month,
+                    "label": f"T{curr.month}",
+                    "start_week": week_idx,
+                })
+
+        days.append({
+            "date": curr.strftime('%Y-%m-%d'),
+            "month": curr.month,
+            "day_number": curr.day,
+            "day_of_week": curr.isoweekday(),
+            "week_index": week_idx,
+            "count": cnt,
+            "is_in_range": is_in_range,
+        })
+        curr += timedelta(days=1)
+
+    top_month = max(month_plays.items(), key=lambda x: x[1])[0] if month_plays else (start_date.month if start_date else 1)
+
+    return {
+        "year": start_date.year,
+        "total_weeks": (sunday_end - monday_start).days // 7 + 1,
+        "total_days": len(days),
+        "total_plays": total_plays,
+        "peak_day": peak_day or (start_date.strftime('%Y-%m-%d') if days else ""),
+        "peak_plays": peak_plays,
+        "active_days": active_days,
+        "longest_streak": max_streak,
+        "top_month": top_month,
+        "top_month_plays": month_plays.get(top_month, 0),
+        "max_density": max_count,
+        "months_header": months_header,
+        "days": days,
+    }
+
+def get_listening_heatmap(user, start_dt, end_dt, time_range_label: str = '30d', period_type: str = None) -> dict:
+    """Trich xuat ma tran mat do nghe nhac thich ung (Tuan / Thang / Nam)."""
+    user_tz = timezone.get_current_timezone()
+
+    # Xac dinh period_type neu chua chi dinh ro
+    if not period_type:
+        day_diff = (end_dt - start_dt).days
+        if day_diff > 35:
+            period_type = 'year'
+        elif day_diff > 8:
+            period_type = 'month'
+        else:
+            period_type = 'week'
+
+    # 1. Luon trich xuat ma tran 7x24 de dam bao tinh tuong thich nguoc tuyet doi
     qs = (
         ListeningHistory.objects.filter(user=user, played_at__range=(start_dt, end_dt))
         .annotate(
-            day_of_week=ExtractIsoWeekDay('played_at'), # 1 (Mon) den 7 (Sun)
-            hour=ExtractHour('played_at'),              # 0 den 23
+            day_of_week=ExtractIsoWeekDay('played_at', tzinfo=user_tz),
+            hour=ExtractHour('played_at', tzinfo=user_tz),
         )
         .values('day_of_week', 'hour')
         .annotate(count=Count('id'))
@@ -436,7 +577,6 @@ def get_listening_heatmap(user, start_dt, end_dt, time_range_label: str = '30d')
     matrix = []
     max_density = 0
 
-    # Xay dung luoi 7 x 24 day du
     for day in range(1, 8):
         for h in range(24):
             cnt = matrix_map.get((day, h), 0)
@@ -449,11 +589,42 @@ def get_listening_heatmap(user, start_dt, end_dt, time_range_label: str = '30d')
                 "count": cnt,
             })
 
-    return {
+    result = {
         "time_range": time_range_label,
+        "period_type": period_type,
         "max_density": max_density,
         "matrix": matrix,
     }
+
+    # 2. Xay dung lich theo chu ky Thang hoac Nam neu duoc yeu cau
+    if period_type in ('month', 'year'):
+        qs_daily = (
+            ListeningHistory.objects.filter(user=user, played_at__range=(start_dt, end_dt))
+            .annotate(play_date=TruncDate('played_at', tzinfo=user_tz))
+            .values('play_date')
+            .annotate(count=Count('id'))
+            .order_by('play_date')
+        )
+        daily_map = {item['play_date']: item['count'] for item in qs_daily if item['play_date']}
+
+        start_date = timezone.localtime(start_dt, user_tz).date() if timezone.is_aware(start_dt) else start_dt.date()
+        end_date = timezone.localtime(end_dt, user_tz).date() if timezone.is_aware(end_dt) else end_dt.date()
+
+        if period_type == 'month':
+            # Phong ve: Neu truyen vao khoang thoi gian dai hon 32 ngay (do mang dai ngay cua nam sang thang),
+            # chi tap trung vao thang cua end_date
+            if (end_date - start_date).days > 32:
+                target_year = end_date.year
+                target_month = end_date.month
+                start_date = date(target_year, target_month, 1)
+                last_day_num = calendar.monthrange(target_year, target_month)[1]
+                end_date = date(target_year, target_month, last_day_num)
+
+            result["month_calendar"] = _build_month_calendar(start_date, end_date, daily_map)
+        elif period_type == 'year':
+            result["year_calendar"] = _build_year_calendar(start_date, end_date, daily_map)
+
+    return result
 
 def get_bar_chart_race(user, start_dt, end_dt, top_n: int = 5) -> dict:
     """
@@ -587,9 +758,10 @@ def get_weekly_comparison(user, start_dt=None, end_dt=None) -> dict:
     prev_week_start = current_week_start - timedelta(days=7)
     prev_week_end = current_week_start - timedelta(microseconds=1)
 
+    user_tz = timezone.get_current_timezone()
     curr_qs = (
         ListeningHistory.objects.filter(user=user, played_at__range=(current_week_start, current_week_end))
-        .annotate(iso_weekday=ExtractIsoWeekDay('played_at'))
+        .annotate(iso_weekday=ExtractIsoWeekDay('played_at', tzinfo=user_tz))
         .values('iso_weekday')
         .annotate(count=Count('id'))
     )
@@ -597,7 +769,7 @@ def get_weekly_comparison(user, start_dt=None, end_dt=None) -> dict:
 
     prev_qs = (
         ListeningHistory.objects.filter(user=user, played_at__range=(prev_week_start, prev_week_end))
-        .annotate(iso_weekday=ExtractIsoWeekDay('played_at'))
+        .annotate(iso_weekday=ExtractIsoWeekDay('played_at', tzinfo=user_tz))
         .values('iso_weekday')
         .annotate(count=Count('id'))
     )

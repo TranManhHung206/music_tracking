@@ -62,6 +62,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.UserTimezoneMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -162,6 +163,8 @@ REST_FRAMEWORK = {
 # ==========================================
 # CORS CONFIGURATION
 # ==========================================
+from corsheaders.defaults import default_headers
+
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
@@ -172,6 +175,9 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+]
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-timezone',
 ]
 
 # ==========================================
@@ -187,6 +193,7 @@ SPOTIFY_REDIRECT_URI = os.getenv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8000/
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 AI_PROVIDER = os.getenv('AI_PROVIDER', 'groq')
 AI_MODEL_GROQ = os.getenv('AI_MODEL_GROQ', 'openai/gpt-oss-120b')
+AI_MODEL_GROQ_BACKUP = os.getenv('AI_MODEL_GROQ_BACKUP', 'openai/gpt-oss-20b')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 # Redis / Celery

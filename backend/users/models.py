@@ -11,6 +11,7 @@ class SpotifyProfile(models.Model):
     email = models.EmailField(blank=True, null=True)
     avatar_url = models.URLField(max_length=512, blank=True, null=True)
     country = models.CharField(max_length=10, blank=True, null=True)
+    timezone = models.CharField(max_length=64, default='Asia/Ho_Chi_Minh', blank=True)
 
     encrypted_access_token = models.TextField(blank=True, default='')
     encrypted_refresh_token = models.TextField(blank=True, default='')

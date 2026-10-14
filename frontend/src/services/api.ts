@@ -8,6 +8,8 @@ import type {
   TopAlbum,
   RadarData,
   HeatmapData,
+  MonthHeatmapData,
+  YearHeatmapData,
   BarChartRaceData,
   WeeklyComparisonData,
   GenreDistributionData,
@@ -43,6 +45,10 @@ apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
   if (token && config.headers) {
     config.headers.Authorization = `Token ${token}`;
+  }
+  const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh';
+  if (config.headers) {
+    config.headers['X-Timezone'] = clientTimezone;
   }
   return config;
 });
@@ -156,9 +162,79 @@ export const MOCK_RADAR: RadarData = {
   ],
 };
 
+export const MOCK_MONTH_CALENDAR: MonthHeatmapData = {
+  year: 2026,
+  month: 10,
+  first_day_weekday: 4,
+  total_days: 31,
+  total_plays: 248,
+  peak_day: '2026-10-10',
+  peak_plays: 28,
+  active_days: 25,
+  max_density: 28,
+  days: Array.from({ length: 31 }, (_, i) => {
+    const dayNum = i + 1;
+    const dateStr = `2026-10-${dayNum.toString().padStart(2, '0')}`;
+    const weekday = ((4 + i - 1) % 7) + 1;
+    const count = (dayNum % 7 === 0 || dayNum % 6 === 0) ? Math.floor(Math.random() * 15) + 8 : Math.floor(Math.random() * 8) + 1;
+    return {
+      date: dateStr,
+      day_number: dayNum,
+      day_of_week: weekday,
+      count,
+      is_current_month: true,
+    };
+  }),
+};
+
+export const MOCK_YEAR_CALENDAR: YearHeatmapData = {
+  year: 2026,
+  total_weeks: 53,
+  total_days: 371,
+  total_plays: 2840,
+  peak_day: '2026-06-18',
+  peak_plays: 45,
+  active_days: 280,
+  longest_streak: 18,
+  top_month: 10,
+  top_month_plays: 412,
+  max_density: 45,
+  months_header: [
+    { month: 1, label: 'T1', start_week: 0 },
+    { month: 2, label: 'T2', start_week: 4 },
+    { month: 3, label: 'T3', start_week: 8 },
+    { month: 4, label: 'T4', start_week: 13 },
+    { month: 5, label: 'T5', start_week: 17 },
+    { month: 6, label: 'T6', start_week: 22 },
+    { month: 7, label: 'T7', start_week: 26 },
+    { month: 8, label: 'T8', start_week: 30 },
+    { month: 9, label: 'T9', start_week: 35 },
+    { month: 10, label: 'T10', start_week: 39 },
+    { month: 11, label: 'T11', start_week: 44 },
+    { month: 12, label: 'T12', start_week: 48 },
+  ],
+  days: Array.from({ length: 53 * 7 }, (_, i) => {
+    const weekIndex = Math.floor(i / 7);
+    const dayOfWeek = (i % 7) + 1;
+    const count = Math.random() > 0.3 ? Math.floor(Math.random() * 20) + 1 : 0;
+    return {
+      date: `2026-W${weekIndex + 1}-${dayOfWeek}`,
+      month: Math.min(12, Math.floor(weekIndex / 4.4) + 1),
+      day_number: (i % 28) + 1,
+      day_of_week: dayOfWeek,
+      week_index: weekIndex,
+      count,
+      is_in_range: true,
+    };
+  }),
+};
+
 export const MOCK_HEATMAP: HeatmapData = {
   time_range: '30d',
+  period_type: 'week',
   max_density: 18,
+  month_calendar: MOCK_MONTH_CALENDAR,
+  year_calendar: MOCK_YEAR_CALENDAR,
   matrix: Array.from({ length: 7 * 24 }, (_, i) => {
     const day = Math.floor(i / 24) + 1;
     const hour = i % 24;
@@ -622,14 +698,15 @@ export const api = {
     }
   },
 
-  async getHeatmap(filter?: TimeFilterInput): Promise<HeatmapData> {
+  async getHeatmap(filter?: TimeFilterInput, periodType?: string): Promise<HeatmapData> {
     const params = buildTimeParams(filter);
+    const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/heatmap/?${params}`);
+      const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`);
       return res.data;
     } catch {
       const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
-      return { ...MOCK_HEATMAP, time_range: rangeStr };
+      return { ...MOCK_HEATMAP, time_range: rangeStr, period_type: (periodType as 'week' | 'month' | 'year') || 'week' };
     }
   },
 
@@ -717,10 +794,11 @@ export const api = {
     }
   },
 
-  async getMusicFacts(period: string = 'week', forceRefresh: boolean = false): Promise<MusicFactsResponse> {
+  async getMusicFacts(period: string = 'week', forceRefresh: boolean = false, trigger: boolean = false): Promise<MusicFactsResponse> {
     try {
       const refreshParam = forceRefresh ? '&refresh=true' : '';
-      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}`);
+      const triggerParam = trigger ? '&trigger=true' : '';
+      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`);
       return res.data;
     } catch {
       return MOCK_MUSIC_FACTS;

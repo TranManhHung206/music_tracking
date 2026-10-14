@@ -81,31 +81,54 @@ def extract_user_music_context(user, period_type: str = 'monthly') -> dict:
         }
     }
 
+from django.core.cache import cache
+
 def call_groq_inference(context_dict: dict) -> tuple[dict, str]:
-    """Goi Groq API voi model openai/gpt-oss-120b tra ve JSON structured output."""
+    """Goi Groq API voi kien truc cascading: Thu 120b truoc, neu rate limit thi chuyen sang 20b."""
     groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or ''
     if not groq_api_key:
         raise ValueError("GROQ_API_KEY khong duoc thiet lap.")
 
-    model_name = getattr(settings, 'AI_MODEL_GROQ', 'openai/gpt-oss-120b')
+    model_primary = getattr(settings, 'AI_MODEL_GROQ', 'openai/gpt-oss-120b')
+    model_backup = getattr(settings, 'AI_MODEL_GROQ_BACKUP', 'openai/gpt-oss-20b')
+
     from groq import Groq
     client = Groq(api_key=groq_api_key)
-
     user_prompt = f"Dữ liệu phân tích người dùng:\n{json.dumps(context_dict, ensure_ascii=False, indent=2)}"
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        model=model_name,
-        temperature=0.7,
-        response_format={"type": "json_object"},
-    )
+    models_to_try = []
+    if not cache.get(f"groq_circuit_breaker:{model_primary}"):
+        models_to_try.append(model_primary)
+    if not cache.get(f"groq_circuit_breaker:{model_backup}"):
+        models_to_try.append(model_backup)
+    if not models_to_try:
+        models_to_try = [model_backup]
 
-    response_text = chat_completion.choices[0].message.content
-    parsed_json = json.loads(response_text)
-    return parsed_json, f"groq:{model_name}"
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=model_name,
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+            response_text = chat_completion.choices[0].message.content
+            parsed_json = json.loads(response_text)
+            return parsed_json, f"groq:{model_name}"
+        except Exception as e:
+            last_error = e
+            err_msg = str(e)
+            if "429" in err_msg or "rate_limit" in err_msg.lower():
+                logger.warning(f"Persona: Model {model_name} gap 429 Rate Limit. Khoa Circuit Breaker 60 giay.")
+                cache.set(f"groq_circuit_breaker:{model_name}", True, timeout=60)
+            else:
+                logger.warning(f"Persona: Model {model_name} that bai: {err_msg}")
+
+    raise last_error or RuntimeError("Groq inference that bai tren tat ca cac model.")
 
 def call_gemini_inference(context_dict: dict) -> tuple[dict, str]:
     """Goi Google Gemini API lam kenh du phong fallback."""

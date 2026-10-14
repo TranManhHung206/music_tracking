@@ -23,11 +23,21 @@ from .services import (
     get_or_generate_music_facts,
 )
 
+from django.core.cache import cache
+
 class PersonaGenerateView(APIView):
     """API kich hoat tien trinh AI phan tich tam ly va ca tinh am nhac cua nguoi dung."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        # Anti-spam cooldown 15 giay cho nguoi dung
+        cooldown_key = f"user_persona_cooldown:{request.user.id}"
+        if cache.get(cooldown_key):
+            latest = AIMusicPersona.objects.filter(user=request.user).first()
+            if latest:
+                return Response(AIMusicPersonaSerializer(latest).data, status=status.HTTP_200_OK)
+        cache.set(cooldown_key, True, timeout=15)
+
         serializer = GeneratePersonaRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         period_type = serializer.validated_data.get('period_type', 'monthly')
@@ -37,7 +47,7 @@ class PersonaGenerateView(APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 class PersonaLatestView(APIView):
-    """API lay bao cao AI Music Persona moi nhat cua nguoi dung."""
+    """API lay bao cao AI Music Persona moi nhat cua nguoi dung (chi doc du lieu san co, khong tu dong goi AI)."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -48,9 +58,8 @@ class PersonaLatestView(APIView):
 
         latest_persona = qs.first()
         if not latest_persona:
-            # Neu chua co bao cao, tu dong sinh bao cao dau tien
-            period = period_type if period_type in ['weekly', 'monthly', 'all_time'] else 'monthly'
-            latest_persona = generate_and_save_persona(request.user, period_type=period)
+            # Tra ve JSON rong de giao dien hien thi the moi goi nguoi dung bam nut thu cong
+            return Response({}, status=status.HTTP_200_OK)
 
         serializer = AIMusicPersonaSerializer(latest_persona)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -95,11 +104,14 @@ class MusicFactsView(APIView):
         period = request.query_params.get('period', 'week')
         force_refresh_str = request.query_params.get('refresh', 'false').lower()
         force_refresh = force_refresh_str in ['true', '1', 'yes']
+        trigger_str = request.query_params.get('trigger', 'false').lower()
+        manual_trigger = trigger_str in ['true', '1', 'yes'] or force_refresh
 
         result = get_or_generate_music_facts(
             user=request.user,
             period_key=period,
             force_refresh=force_refresh,
+            allow_ai_generation=manual_trigger,
         )
         serializer = MusicFactsResponseSerializer(result)
         return Response(serializer.data, status=status.HTTP_200_OK)
