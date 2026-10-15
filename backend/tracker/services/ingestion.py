@@ -367,19 +367,20 @@ def sync_user_recently_played_pipeline(user) -> dict:
             ingest_res = ingest_recently_played_payload(user, payload)
             total_scrobbled += ingest_res.get("scrobbled_count", 0)
 
-            # Phan trang tiep neu Spotify con bai nghe sau moc do (toi da 3 trang de tranh rate limit)
-            page = 1
-            cursors = payload.get("cursors")
-            while cursors and cursors.get("after") and len(items) == 50 and page < 3:
-                next_after = int(cursors["after"])
-                next_payload = fetch_recently_played_from_api(access_token, after_ms=next_after, limit=50)
-                items = next_payload.get("items", [])
-                if not items:
-                    break
-                next_ingest = ingest_recently_played_payload(user, next_payload)
-                total_scrobbled += next_ingest.get("scrobbled_count", 0)
-                cursors = next_payload.get("cursors")
-                page += 1
+            # Phat hien khoang trong du lieu do Spotify gioi han 50 bai (Gap Detection)
+            if len(items) == 50:
+                try:
+                    oldest_item_time = parse_iso_datetime(items[-1]["played_at"])
+                    time_gap_seconds = (oldest_item_time - last_played).total_seconds()
+                    if time_gap_seconds > 7200:
+                        logger.warning(
+                            f"[DATA_GAP_DETECTED] User '{user.username}': Phat hien khoang trong "
+                            f"{time_gap_seconds / 3600:.1f}h giua ban ghi DB ({last_played.isoformat()}) "
+                            f"va bai cu nhat Spotify tra ve ({oldest_item_time.isoformat()}). "
+                            f"Cac bai hat o giua da bi troi khoi bo dem 50 bai cua Spotify."
+                        )
+                except Exception as gap_err:
+                    logger.debug(f"Gap detection check error: {gap_err}")
         else:
             # Fallback kiem tra 50 bai gan nhat (khong after) de chong lech dong ho may chu
             fallback_payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50)

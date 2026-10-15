@@ -14,7 +14,10 @@ from ai_engine.models import AIMusicPersona
 from ai_engine.services.knn_recommender import (
     normalize_tempo,
     extract_track_vector,
+    apply_feature_weights,
     get_song_recommendations,
+    FEATURE_WEIGHTS,
+    MAX_WEIGHTED_DISTANCE,
 )
 from ai_engine.services.ai_persona import (
     generate_heuristic_persona,
@@ -96,6 +99,15 @@ class VectorizationAndKNNTests(AIEngineBaseTestCase):
         for val in vec:
             self.assertTrue(0.0 <= val <= 1.0, f"Gia tri ngoai bien [0, 1]: {val}")
 
+    def test_apply_feature_weights(self):
+        raw_vec = [1.0, 1.0, 1.0, 1.0, 1.0]
+        weighted = apply_feature_weights(raw_vec)
+        self.assertEqual(len(weighted), 5)
+        # Kiem tra trong so sqrt(w)
+        import numpy as np
+        expected = np.sqrt(FEATURE_WEIGHTS)
+        np.testing.assert_allclose(weighted, expected, rtol=1e-5)
+
     def test_knn_song_recommendations_ranking(self):
         rec_data = get_song_recommendations(self.seed_track.spotify_id, top_k=2)
         
@@ -115,6 +127,28 @@ class VectorizationAndKNNTests(AIEngineBaseTestCase):
         # Kiem tra sap xep giam dan
         scores_list = [r['similarity_score'] for r in recs]
         self.assertEqual(scores_list, sorted(scores_list, reverse=True))
+
+    def test_knn_song_recommendations_deduplication(self):
+        # Tao them ban sao cua trk_sim voi cung ten va ca si nhung khac spotify_id
+        duplicate_track = Track.objects.create(
+            spotify_id='trk_sim_duplicate',
+            name='Ngày Chưa Giông Bão',
+            album=self.album,
+            duration_ms=231000,
+            danceability=0.42,
+            energy=0.35,
+            valence=0.28,
+            acousticness=0.80,
+            tempo=88.0,
+            features_synced=True,
+        )
+        duplicate_track.artists.add(self.artist)
+
+        rec_data = get_song_recommendations(self.seed_track.spotify_id, top_k=5)
+        recs = rec_data['recommendations']
+        names = [r['name'] for r in recs]
+        # Ten bai hat phai la duy nhat trong ket qua tra ve
+        self.assertEqual(len(names), len(set(names)))
 
 MOCK_PERSONA_INFERENCE = (
     {

@@ -1,12 +1,19 @@
 """
 KNN Song Recommendation Engine
-Su dung scikit-learn NearestNeighbors voi Cosine Distance de tim kiem cac bai hat co Audio Features tuong dong nhat.
+Su dung scikit-learn NearestNeighbors voi Weighted Euclidean Distance (KD-Tree / Auto) de tim kiem cac bai hat co Audio Features tuong dong nhat.
 Vector 5D: [danceability, energy, valence, acousticness, normalized_tempo].
 """
 
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from tracker.models import Track
+
+# Bang trong so dac trung am thanh (Feature Weights)
+# [danceability, energy, valence, acousticness, tempo_norm]
+# Can bang tu nhien giua acoustic va electronic ma khong lam bias the loai
+FEATURE_WEIGHTS = np.array([1.0, 1.1, 0.8, 1.1, 1.2], dtype=float)
+SQRT_WEIGHTS = np.sqrt(FEATURE_WEIGHTS)
+MAX_WEIGHTED_DISTANCE = float(np.sqrt(np.sum(FEATURE_WEIGHTS)))
 
 def normalize_tempo(tempo_bpm: float) -> float:
     """Chuan hoa tempo BPM (40 - 220) ve mien [0.0, 1.0]."""
@@ -24,9 +31,13 @@ def extract_track_vector(track: Track) -> list[float]:
     t = normalize_tempo(track.tempo)
     return [d, e, v, a, t]
 
+def apply_feature_weights(raw_vector: list[float] | np.ndarray) -> np.ndarray:
+    """Bien doi vector dac trung bang sqrt(weights) de tinh Euclidean tuong duong Weighted Euclidean."""
+    return np.array(raw_vector, dtype=float) * SQRT_WEIGHTS
+
 def get_song_recommendations(seed_track_identifier: str, top_k: int = 5) -> dict:
     """
-    Tim kiem Top K bai hat tuong dong nhat voi seed_track dua tren khoang cach Cosine.
+    Tim kiem Top K bai hat tuong dong nhat voi seed_track dua tren khoang cach Weighted Euclidean.
     seed_track_identifier: spotify_id hoac primary key cua Track.
     """
     # 1. Tim seed track
@@ -79,24 +90,34 @@ def get_song_recommendations(seed_track_identifier: str, top_k: int = 5) -> dict
             "recommendations": [],
         }
 
-    # 3. Chuan bi ma tran vector cho cac candidates
-    candidate_vectors = [extract_track_vector(t) for t in other_candidates]
+    # 3. Chuan bi ma tran vector co trong so cho cac candidates
+    candidate_vectors = [apply_feature_weights(extract_track_vector(t)) for t in other_candidates]
     matrix = np.array(candidate_vectors)
 
-    # 4. Fit mo hinh NearestNeighbors
-    n_neighbors = min(top_k, len(other_candidates))
-    model = NearestNeighbors(n_neighbors=n_neighbors, metric='cosine', algorithm='brute')
+    # 4. Fit mo hinh NearestNeighbors voi Euclidean Distance va thuat toan KD-Tree/Auto
+    query_k = min(max(top_k * 3, top_k), len(other_candidates))
+    model = NearestNeighbors(n_neighbors=query_k, metric='euclidean', algorithm='auto')
     model.fit(matrix)
 
     # 5. Truy van khoang cach
-    seed_arr = np.array(seed_vector).reshape(1, -1)
-    distances, indices = model.kneighbors(seed_arr, n_neighbors=n_neighbors)
+    seed_weighted = apply_feature_weights(seed_vector).reshape(1, -1)
+    distances, indices = model.kneighbors(seed_weighted, n_neighbors=query_k)
 
     recommendations = []
+    seen_track_signatures = set()
     for dist, idx in zip(distances[0], indices[0]):
         matched_track = other_candidates[idx]
-        # Similarity = 1.0 - Cosine Distance, kep trong khoang [0.0, 1.0]
-        raw_sim = 1.0 - float(dist)
+
+        # Deduplication tranh goi y cung 1 ten bai hat nhieu lan
+        primary_artist = matched_track.artists.first()
+        primary_artist_name = primary_artist.name.lower().strip() if primary_artist else ""
+        signature = (matched_track.name.lower().strip(), primary_artist_name)
+        if signature in seen_track_signatures:
+            continue
+        seen_track_signatures.add(signature)
+
+        # Do tuong dong Weighted Euclidean: [0.0, 1.0]
+        raw_sim = 1.0 - (float(dist) / MAX_WEIGHTED_DISTANCE)
         similarity = round(min(max(raw_sim, 0.0), 1.0), 3)
 
         recommendations.append({
@@ -107,6 +128,8 @@ def get_song_recommendations(seed_track_identifier: str, top_k: int = 5) -> dict
             "image_url": matched_track.album.image_url if matched_track.album else "",
             "similarity_score": similarity,
         })
+        if len(recommendations) >= top_k:
+            break
 
     # Sap xep giam dan theo similarity_score
     recommendations.sort(key=lambda x: x["similarity_score"], reverse=True)

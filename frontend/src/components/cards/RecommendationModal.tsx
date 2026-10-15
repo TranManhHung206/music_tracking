@@ -28,7 +28,7 @@ export const RecommendationModal: React.FC<RecommendationModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Gợi Ý Bài Hát Tương Đồng</h3>
-              <p className="text-xs text-slate-400">Thuật toán Scikit-Learn KNN Cosine Distance</p>
+              <p className="text-xs text-slate-400">Thuật toán Scikit-Learn KNN Weighted Euclidean</p>
             </div>
           </div>
           <button
