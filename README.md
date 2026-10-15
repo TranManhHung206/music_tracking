@@ -128,20 +128,29 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
    ```
    Ứng dụng sẽ hoạt động tại địa chỉ: `http://localhost:5173`
 
-### Bước 5: Khởi Chạy Celery Worker (Tùy Chọn)
+### Bước 5: Tự Động Cào Dữ Liệu Định Kỳ Chạy Ngầm (Tùy Chọn)
 
-Nếu bạn muốn hệ thống tự động cào dữ liệu định kỳ 24/7 mà không cần mở trình duyệt:
-1. Đảm bảo Redis server đang chạy tại `127.0.0.1:6379`.
-2. Mở terminal riêng và khởi chạy Worker:
-   ```powershell
-   cd backend
-   celery -A config worker -l info
-   ```
-3. Mở một terminal khác và khởi chạy Beat Scheduler:
-   ```powershell
-   cd backend
-   celery -A config beat -l info
-   ```
+Khi nghe nhạc liên tục qua đêm hoặc nhiều giờ, để tránh các bài hát bị trôi khỏi giới hạn 50 bài gần nhất của Spotify:
+
+* **Cách 1 (Khuyên dùng trên Windows - Không cần cài Redis hay Celery):**
+  Mở một terminal riêng và khởi chạy tiến trình Auto-Sync Daemon độc lập (chu kỳ mặc định 15 phút):
+  ```powershell
+  python backend/manage.py run_auto_sync --interval 15
+  ```
+  Nhấn `Ctrl + C` bất kỳ lúc nào để dừng tiến trình một cách an toàn.
+
+* **Cách 2 (Sử dụng Celery Worker & Beat - Yêu cầu có Redis Server):**
+  1. Đảm bảo Redis server đang chạy tại `127.0.0.1:6379`.
+  2. Khởi chạy Celery Worker (thêm cờ `-P solo` trên Windows):
+     ```powershell
+     cd backend
+     celery -A config worker -l info -P solo
+     ```
+  3. Khởi chạy Celery Beat Scheduler:
+     ```powershell
+     cd backend
+     celery -A config beat -l info
+     ```
 
 ### Bước 6: Các Lệnh Quản Trị & Đồng Bộ Dữ Liệu Chuyên Sâu
 

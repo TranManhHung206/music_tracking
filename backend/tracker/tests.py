@@ -194,3 +194,36 @@ class TrackerAPITest(TestCase):
         data = response.json()
         self.assertTrue(data["is_sync_active"])
         self.assertEqual(data["total_scrobbles"], 1)
+
+class AutoSyncCommandTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="auto_sync_test_user")
+        self.profile = SpotifyProfile.objects.create(
+            user=self.user,
+            spotify_id="sp_auto_sync_1",
+            display_name="Auto Sync User",
+            is_sync_active=True
+        )
+
+    @patch('tracker.management.commands.run_auto_sync.sync_user_recently_played_pipeline')
+    def test_run_auto_sync_once(self, mock_sync):
+        from django.core.management import call_command
+        from io import StringIO
+
+        mock_sync.return_value = {
+            "status": "success",
+            "scrobbled_count": 5,
+            "features_synced_count": 5,
+            "sync_mode": "latest_50"
+        }
+
+        out = StringIO()
+        call_command('run_auto_sync', '--once', '--interval', '1', stdout=out)
+        output_str = out.getvalue()
+
+        self.assertIn("Khoi dong Auto-Sync Daemon", output_str)
+        self.assertIn("auto_sync_test_user", output_str)
+        self.assertIn("new_tracks=5", output_str)
+        self.assertIn("Da dung Auto-Sync Daemon an toan.", output_str)
+        mock_sync.assert_called_once_with(self.user)
+
