@@ -23,6 +23,12 @@ scikit-learn>=1.4.0
 pandas>=2.2.0
 numpy>=1.26.0
 
+# Audio DSP & Feature Extraction
+librosa>=1.0.0
+soundfile>=0.14.0
+av>=19.0.0
+
 # Utilities & Config
 python-dotenv>=1.0.1
 cryptography>=42.0.0
+

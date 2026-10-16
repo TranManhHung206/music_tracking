@@ -355,3 +355,75 @@ class HybridGenreClassificationTests(AnalyticsBaseTestCase):
             self.assertIn('color', g)
             self.assertTrue(g['color'].startswith('#'))
 
+import tempfile
+import shutil
+from pathlib import Path
+from unittest.mock import patch
+from django.core.management import call_command
+from analytics.services import calculations
+
+class ArtistCSVClassificationTests(APITestCase):
+    """Kiem thu chuc nang xu ly file CSV phan loai nghe si va nhan New."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.orig_data_dir = calculations.DATA_DIR
+        calculations.DATA_DIR = Path(self.temp_dir)
+        calculations._ALL_CSV_ARTIST_NAMES.clear()
+        calculations._CUSTOM_ARTISTS_LOADED = False
+        calculations._LAST_CSV_MTIME = 0.0
+
+    def tearDown(self):
+        calculations.DATA_DIR = self.orig_data_dir
+        calculations._ALL_CSV_ARTIST_NAMES.clear()
+        calculations._CUSTOM_ARTISTS_LOADED = False
+        calculations._LAST_CSV_MTIME = 0.0
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_load_custom_artist_dataset_skips_new_notes(self):
+        csv_path = Path(self.temp_dir) / "test_artists.csv"
+        with open(csv_path, mode="w", encoding="utf-8-sig") as f:
+            f.write("spotify_name,is_vpop,notes\n")
+            f.write("Confirmed VN,1.0,\n")
+            f.write("Confirmed Foreign,0.0,\n")
+            f.write("Pending VN,1.0,New\n")
+            f.write("Pending Foreign,0.0,New\n")
+            f.write("Pending CaseInsensitive,0,new\n")
+
+        vn, foreign = calculations.load_custom_artist_dataset()
+
+        self.assertIn("confirmed vn", vn)
+        self.assertIn("confirmed foreign", foreign)
+        self.assertNotIn("pending vn", vn)
+        self.assertNotIn("pending foreign", foreign)
+        self.assertNotIn("pending vn", foreign)
+        self.assertNotIn("pending foreign", vn)
+        self.assertNotIn("pending caseinsensitive", foreign)
+        self.assertIn("pending foreign", calculations._ALL_CSV_ARTIST_NAMES)
+        self.assertIn("confirmed vn", calculations._ALL_CSV_ARTIST_NAMES)
+
+    def test_register_unclassified_artists_batch_and_deduplication(self):
+        added = calculations.register_unclassified_artists_batch(["New Artist 1", "New Artist 2"])
+        self.assertEqual(added, 2)
+
+        csv_file = Path(self.temp_dir) / "vietnamese_artist.csv"
+        self.assertTrue(csv_file.exists())
+
+        with open(csv_file, mode="r", encoding="utf-8-sig") as f:
+            content = f.read()
+        self.assertIn("New Artist 1,0,New", content)
+        self.assertIn("New Artist 2,0,New", content)
+
+        # Kiem tra chong trung lap
+        added_again = calculations.register_unclassified_artists_batch(["new artist 1", "New Artist 2", "New Artist 3"])
+        self.assertEqual(added_again, 1)
+
+    def test_sync_missing_artists_command(self):
+        from io import StringIO
+        Artist.objects.create(spotify_id="cmd_art_1", name="Command Artist Test")
+        out = StringIO()
+        call_command("sync_missing_artists_to_csv", stdout=out)
+        output = out.getvalue()
+        self.assertIn("Tong so nghe si", output)
+        self.assertIn("Hoan tat dong bo", output)
+
