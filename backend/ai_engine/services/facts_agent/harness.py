@@ -7,6 +7,7 @@ Thuc thi cac Code Guardrails:
 """
 
 import re
+import random
 import logging
 from typing import Any
 from tracker.models import ListeningHistory
@@ -272,4 +273,9 @@ def generate_heuristic_facts(user, start_dt, end_dt) -> list[dict]:
             "evidence": f"Ghi nhận trong {total} lần phát bài hát",
         })
 
+    # Neu co nhieu hon 3 facts hop le, boc ngau nhien 3 facts de tao su da dang phong phu
+    if len(facts) > 3:
+        return random.sample(facts, 3)
+
     return facts[:3]
+

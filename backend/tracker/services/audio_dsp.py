@@ -7,6 +7,7 @@ import os
 import io
 import logging
 import tempfile
+from contextlib import contextmanager
 import requests
 import librosa
 import numpy as np
@@ -14,6 +15,73 @@ import numpy as np
 from tracker.models import Track, Artist
 
 logger = logging.getLogger(__name__)
+
+@contextmanager
+def suppress_c_stderr():
+    """Tam thoi chuyen huong stderr cap he dieu hanh (C-level fd 2) de triet tieu cac warning vo hai tu libmpg123."""
+    saved_stderr = None
+    try:
+        null_fd = os.open(os.devnull, os.O_WRONLY)
+        stderr_fd = 2
+        saved_stderr = os.dup(stderr_fd)
+        os.dup2(null_fd, stderr_fd)
+        os.close(null_fd)
+    except Exception:
+        pass
+
+    try:
+        yield
+    finally:
+        if saved_stderr is not None:
+            try:
+                os.dup2(saved_stderr, 2)
+                os.close(saved_stderr)
+            except Exception:
+                pass
+
+def load_audio_file(file_path: str, target_sr: int = 22050, duration: int = 30) -> tuple[np.ndarray, int]:
+    """
+    Nap va giai ma du lieu song am da dinh dang (MP3, M4A/AAC, WAV, FLAC).
+    Uu tien soundfile/librosa cho MP3 (Deezer); tu dong fallback sang PyAV cho AAC/M4A (Apple Music).
+    """
+    # 1. Thu nghiem soundfile / librosa truoc (rat nhanh cho MP3)
+    try:
+        with suppress_c_stderr():
+            y, sr = librosa.load(file_path, sr=target_sr, duration=duration)
+            return y, sr
+    except Exception as sf_err:
+        logger.debug(f"librosa.load khong the doc '{file_path}': {sf_err}. Chuyen sang giai ma bang PyAV.")
+
+    # 2. Giai ma bang PyAV (ho tro triet de AAC, M4A, MP4 audio tu Apple Music tren moi he dieu hanh)
+    import av
+    container = av.open(file_path)
+    try:
+        resampler = av.AudioResampler(format='fltp', layout='mono', rate=target_sr)
+        frames = []
+        max_samples = target_sr * duration
+        collected_samples = 0
+
+        for frame in container.decode(audio=0):
+            for resampled in resampler.resample(frame):
+                arr = resampled.to_ndarray()
+                frames.append(arr)
+                collected_samples += arr.shape[1]
+            if collected_samples >= max_samples:
+                break
+
+        for resampled in resampler.resample(None):
+            frames.append(resampled.to_ndarray())
+
+        if not frames:
+            raise ValueError("PyAV khong tim thay frames am thanh hop le.")
+
+        y = np.concatenate(frames, axis=1).squeeze()
+        if len(y) > max_samples:
+            y = y[:max_samples]
+
+        return y, target_sr
+    finally:
+        container.close()
 
 def discover_track_multimedia(title: str, artist_name: str) -> dict | None:
     """Tim kiem doan preview 30s va anh nghe si qua Deezer va iTunes."""
@@ -75,7 +143,7 @@ def discover_track_multimedia(title: str, artist_name: str) -> dict | None:
     return None
 
 def extract_dsp_features_from_preview(audio_url: str) -> dict:
-    """Tai 30s audio vao tempfile an toan tren Windows va phan tich song am bang librosa."""
+    """Tai 30s audio vao tempfile an toan tren Windows va phan tich song am bang librosa/PyAV."""
     resp = requests.get(audio_url, timeout=10)
     if resp.status_code != 200:
         raise ValueError(f"Khong the tai stream audio: HTTP {resp.status_code}")
@@ -87,7 +155,7 @@ def extract_dsp_features_from_preview(audio_url: str) -> dict:
     tmp.close()
 
     try:
-        y, sr = librosa.load(tmp_path, sr=22050, duration=30)
+        y, sr = load_audio_file(tmp_path, target_sr=22050, duration=30)
 
         # 1. Tempo / BPM thuc te
         tempo_res = librosa.beat.beat_track(y=y, sr=sr)
@@ -117,7 +185,7 @@ def extract_dsp_features_from_preview(audio_url: str) -> dict:
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
         spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
         brightness = float(np.mean(spectral_centroid)) / 4500.0
-        valence_score = min(0.95, max(0.15, round(0.4 * brightness + 0.6 * np.mean(chroma), 3)))
+        valence_score = float(min(0.95, max(0.15, round(0.4 * brightness + 0.6 * float(np.mean(chroma)), 3))))
 
         return {
             "bpm": round(raw_bpm, 1),

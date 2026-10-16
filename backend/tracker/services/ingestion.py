@@ -162,6 +162,7 @@ def ingest_recently_played_payload(user, payload: dict) -> dict:
 
     history_to_create = []
     tracks_to_feature_sync = []
+    all_ingested_artists = set()
 
     with transaction.atomic():
         for played_at_dt, item in unique_items:
@@ -183,6 +184,8 @@ def ingest_recently_played_payload(user, payload: dict) -> dict:
                     defaults={"name": art_name}
                 )
                 artist_instances.append(artist_obj)
+                if artist_obj.name:
+                    all_ingested_artists.add(artist_obj.name)
 
             # 2. Xu ly Album
             album_obj = None
@@ -242,6 +245,13 @@ def ingest_recently_played_payload(user, payload: dict) -> dict:
             history_to_create,
             ignore_conflicts=True
         )
+
+    if all_ingested_artists:
+        try:
+            from analytics.services.calculations import register_unclassified_artists_batch
+            register_unclassified_artists_batch(list(all_ingested_artists))
+        except Exception:
+            pass
 
     return {
         "scrobbled_count": len(created_records),

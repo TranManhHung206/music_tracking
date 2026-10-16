@@ -451,4 +451,52 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         self.assertEqual(recorded_calls[3]["tool_choice"], "none")
         self.assertEqual(recorded_calls[3]["response_format"], {"type": "json_object"})
 
+    def test_investigation_leads_and_tool_definitions_integrity(self):
+        from ai_engine.services.facts_agent.agent import INVESTIGATION_LEADS
+        from ai_engine.services.facts_agent.harness import GROQ_TOOL_DEFINITIONS, ALLOWED_TOOLS
+
+        self.assertGreaterEqual(len(INVESTIGATION_LEADS), 4)
+        tool_names = [t["function"]["name"] for t in GROQ_TOOL_DEFINITIONS]
+        self.assertEqual(set(tool_names), set(ALLOWED_TOOLS.keys()))
+
+    def test_heuristic_facts_randomized_diversity(self):
+        from django.utils import timezone
+        from ai_engine.services.facts_agent.harness import generate_heuristic_facts
+
+        now = timezone.now()
+        start_dt = now - timezone.timedelta(days=7)
+
+        # Tao 4 bai hat va nghe de thoa man ca 4 loai facts: repeat_loop, artist_dominance, marathon, night_owl
+        for i in range(5):
+            # Nghe lap di lap lai de thoa man repeat_loop
+            ListeningHistory.objects.create(
+                user=self.user,
+                track=self.seed_track,
+                played_at=now - timezone.timedelta(hours=1, minutes=10 * i),
+            )
+
+        for i in range(4):
+            # Nghe vao ban dem 02:00 de thoa man night_owl
+            night_dt = (now - timezone.timedelta(days=1)).replace(hour=2, minute=10 + i * 5)
+            ListeningHistory.objects.create(
+                user=self.user,
+                track=self.seed_track,
+                played_at=night_dt,
+            )
+
+        # Chay 10 lan generate_heuristic_facts va kiem tra tinh hop le
+        all_returned_categories = set()
+        for _ in range(10):
+            facts = generate_heuristic_facts(self.user, start_dt, now)
+            self.assertEqual(len(facts), 3)
+            for f in facts:
+                self.assertIn("category", f)
+                self.assertIn("title", f)
+                self.assertIn("description", f)
+                all_returned_categories.add(f["category"])
+
+        # Phai xuat hien tu 2 categories tro len, chung to he thong co chon loc da dang
+        self.assertGreater(len(all_returned_categories), 1)
+
+
 

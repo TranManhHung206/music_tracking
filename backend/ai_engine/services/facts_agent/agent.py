@@ -5,6 +5,7 @@ Kiem soat chat che bang Harness Guardrails: Loop Budget, Tool Whitelist va Verif
 """
 
 import json
+import random
 import logging
 from django.conf import settings
 from django.core.cache import cache
@@ -24,7 +25,7 @@ Nhiệm vụ của bạn: Sử dụng các công cụ được cung cấp để 
 Các quy tắc bắt buộc nghiêm ngặt:
 1. XƯNG HÔ THÂN THIỆN: Tuyệt đối CẤM dùng từ "người dùng", "thính giả" hoặc "họ". Bạn BẮT BUỘC phải xưng hô trực tiếp là "bạn" (ví dụ: "Bạn đã cày liên tục...", "Bạn dành trọn 80% thời gian cho...", "Gu nghe nhạc của bạn..."). Hãy trò chuyện thân mật, truyền cảm hứng như người bạn thân âm nhạc (Spotify Wrapped).
 2. SỐ LƯỢNG: Bạn BẮT BUỘC phải trả về đúng 3 sự thật âm nhạc khác nhau (3 facts). Hãy gọi từ 2 đến 3 công cụ khác nhau để thu thập đủ dữ liệu đa dạng.
-3. CHỈ ĐƯỢC GỌI CÔNG CỤ TRONG DANH SÁCH: Tuyệt đối CHỈ ĐƯỢC PHÉP gọi các công cụ đã được cung cấp (query_repeat_loops, query_night_owl_habits, query_marathon_sessions, query_artist_dominance, query_genre_contrast). Tuyệt đối CẤM tự ý bịa hoặc gọi các công cụ không có trong danh sách như commentary, thought, analysis.
+3. CHỈ ĐƯỢC GỌI CÔNG CỤ TRONG DANH SÁCH: Tuyệt đối CHỈ ĐƯỢC PHÉP gọi các công cụ đã được cung cấp (query_repeat_loops, query_night_owl_anomaly, query_marathon_sessions, query_artist_dominance, query_tempo_or_energy_contrast). Tuyệt đối CẤM tự ý bịa hoặc gọi các công cụ không có trong danh sách như commentary, thought, analysis.
 4. CHỈ CHỌN HÀNH VI TÍCH CỰC & NỔI BẬT: Mọi sự thật bạn đưa ra BẮT BUỘC phải dựa trên hành vi nghe thực tế đã diễn ra. Tuyệt đối KHÔNG tạo các sự thật phủ định vô nghĩa (như "bạn không nghe bài nào lúc 3h sáng", "tỷ lệ 0%", "không phát bài nào"). Nếu một công cụ trả về 0 hoặc không có điểm nhấn, hãy chuyển sang gọi công cụ khác.
 5. TUYỆT ĐỐI KHÔNG DÙNG EMOJI hoặc icon ký tự nào ở bất kỳ đâu.
 6. Khi đã thu thập đủ dữ liệu, hãy trả về kết quả cuối cùng ở định dạng Strict JSON thuần túy (không bọc trong markdown ```json) với cấu trúc:
@@ -43,6 +44,14 @@ Các quy tắc bắt buộc nghiêm ngặt:
 }
 """
 
+INVESTIGATION_LEADS = [
+    "Hãy đặc biệt chú ý đến thói quen nghe nhạc đêm khuya (cú đêm) và sự thay đổi cảm xúc hoặc nhịp điệu đột ngột giữa các bài hát.",
+    "Hãy ưu tiên điều tra mức độ trung thành với nghệ sĩ đứng đầu và các phiên nghe marathon dài bất tận.",
+    "Hãy truy vết các bài hát được nghe lặp đi lặp lại nhiều lần trong ngày (repeat loops) và sự tương phản âm thanh thú vị.",
+    "Hãy khám phá toàn diện từ các phiên nghe liên tục dài nhất đến thói quen thức khuya nghe nhạc cùng nghệ sĩ yêu thích.",
+    "Hãy điều tra sự đối lập về năng lượng và tiết tấu giữa các bài hát liền kề cùng mức độ phủ sóng của top nghệ sĩ.",
+]
+
 def is_model_rate_limited(model_name: str) -> bool:
     """Kiem tra xem model co dang bi khoa boi Circuit Breaker do 429 khong."""
     return bool(cache.get(f"groq_circuit_breaker:{model_name}"))
@@ -57,17 +66,25 @@ def _execute_groq_react_loop(client, model_name: str, user, start_dt, end_dt, pe
     Tra ve ket qua dict facts neu thanh cong, hoac None neu that bai / rate limit.
     """
     user_name = user.get_full_name() or user.first_name or user.username
+    selected_lead = random.choice(INVESTIGATION_LEADS)
     messages = [
         {"role": "system", "content": AGENT_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"Hãy điều tra lịch sử nghe nhạc của bạn ({user_name}) {period_label} để tìm ra chính xác 3 sự thật âm nhạc nổi bật, tích cực và thú vị nhất.",
+            "content": (
+                f"Hãy điều tra lịch sử nghe nhạc của bạn ({user_name}) {period_label} "
+                f"để tìm ra chính xác 3 sự thật âm nhạc nổi bật, tích cực và thú vị nhất. "
+                f"Gợi ý hướng phá án: {selected_lead}"
+            ),
         },
     ]
 
     tools_called = []
     max_iterations = 5
     iterations_used = 0
+
+    # Xao tron ngau nhien thu tu cong cu cho moi phien de LLM khong thien vi cac cong cu dau danh sach
+    shuffled_tools = random.sample(GROQ_TOOL_DEFINITIONS, len(GROQ_TOOL_DEFINITIONS))
 
     try:
         for iteration in range(max_iterations):
@@ -79,15 +96,15 @@ def _execute_groq_react_loop(client, model_name: str, user, start_dt, end_dt, pe
             request_params = {
                 "model": model_name,
                 "messages": messages,
-                "temperature": 0.6,
+                "temperature": 0.4 if force_synthesis else 0.75,
             }
 
             if force_synthesis:
-                request_params["tools"] = GROQ_TOOL_DEFINITIONS
+                request_params["tools"] = shuffled_tools
                 request_params["tool_choice"] = "none"
                 request_params["response_format"] = {"type": "json_object"}
             else:
-                request_params["tools"] = GROQ_TOOL_DEFINITIONS
+                request_params["tools"] = shuffled_tools
                 request_params["tool_choice"] = "auto"
 
             chat_completion = client.chat.completions.create(**request_params)

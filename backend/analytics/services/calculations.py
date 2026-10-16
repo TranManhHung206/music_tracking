@@ -178,9 +178,13 @@ USUK_ARTISTS = {
 }
 
 import csv
+import threading
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+_ALL_CSV_ARTIST_NAMES = set()
+_CSV_WRITE_LOCK = threading.Lock()
 
 def load_custom_artist_dataset():
     """Doc tu dong file CSV phan loai nghe si tu backend/analytics/data neu nguoi dung cung cap."""
@@ -208,8 +212,12 @@ def load_custom_artist_dataset():
                     if not artist_name:
                         continue
 
-                    # Neu cot notes danh dau la 'new' ma chua gan gia tri is_vpop thi bo qua
-                    notes_val = row_clean.get("notes", "").lower()
+                    _ALL_CSV_ARTIST_NAMES.add(artist_name)
+
+                    # Neu cot notes danh dau la 'new' thi bo qua, khong phan loai vao vn hoac foreign
+                    notes_val = row_clean.get("notes", "").strip().lower()
+                    if notes_val == "new":
+                        continue
 
                     if type_col:
                         raw_val = row_clean.get(type_col, "").strip().lower()
@@ -218,11 +226,10 @@ def load_custom_artist_dataset():
                             vn_artists.add(artist_name)
                         elif raw_val in ["0", "0.0", "false", "no", "foreign", "quoc te", "international", "usuk", "us-uk", "kpop"]:
                             foreign_artists.add(artist_name)
-                        elif notes_val != "new" and raw_val:
+                        elif raw_val:
                             vn_artists.add(artist_name)
                     else:
-                        if notes_val != "new":
-                            vn_artists.add(artist_name)
+                        vn_artists.add(artist_name)
         except Exception:
             continue
 
@@ -257,6 +264,63 @@ def ensure_custom_artists_loaded():
 
 ensure_custom_artists_loaded()
 
+def register_unclassified_artists_batch(artist_names) -> int:
+    """Tu dong ghi nhan cac nghe si chua co trong CSV voi gia tri mac dinh 0 va note la New."""
+    global _LAST_CSV_MTIME
+    ensure_custom_artists_loaded()
+
+    if not artist_names:
+        return 0
+
+    new_names = []
+    for name in artist_names:
+        if not name or not isinstance(name, str):
+            continue
+        cleaned = name.strip()
+        if not cleaned or cleaned.lower() == "unknown artist":
+            continue
+        if cleaned.lower() not in _ALL_CSV_ARTIST_NAMES:
+            _ALL_CSV_ARTIST_NAMES.add(cleaned.lower())
+            new_names.append(cleaned)
+
+    if not new_names:
+        return 0
+
+    if not DATA_DIR.exists():
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    target_csv = DATA_DIR / "vietnamese_artist.csv"
+    with _CSV_WRITE_LOCK:
+        try:
+            file_exists = target_csv.exists() and target_csv.stat().st_size > 0
+            needs_newline = False
+            if file_exists:
+                with open(target_csv, mode="rb") as rf:
+                    rf.seek(max(0, target_csv.stat().st_size - 2))
+                    tail = rf.read()
+                    if tail and not tail.endswith((b"\n", b"\r")):
+                        needs_newline = True
+
+            with open(target_csv, mode="a", encoding="utf-8-sig", newline="") as f:
+                if needs_newline:
+                    f.write("\n")
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["spotify_name", "is_vpop", "notes"])
+                for n in new_names:
+                    writer.writerow([n, "0", "New"])
+            _LAST_CSV_MTIME = target_csv.stat().st_mtime
+            return len(new_names)
+        except Exception:
+            return 0
+
+def register_unclassified_artist(artist_name: str) -> bool:
+    """Ghi nhan mot nghe si don le vao CSV neu chua ton tai."""
+    return register_unclassified_artists_batch([artist_name]) > 0
+
 def is_artist_match(artist_name_lower: str, target_name: str) -> bool:
     """Kiem tra ten nghe si khop theo tu rieng biet tranh loi substring."""
     pattern = r'\b' + re.escape(target_name.lower()) + r'\b'
@@ -273,10 +337,18 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
 
     if artists:
         artist_names_lower = [a.lower() for a in artists if a]
+        check_artists = artists
     elif artist_name:
         artist_names_lower = [artist_name.lower()]
+        check_artists = [artist_name]
     else:
         artist_names_lower = []
+        check_artists = []
+
+    if check_artists:
+        unregistered = [a for a in check_artists if a and a.strip().lower() not in _ALL_CSV_ARTIST_NAMES]
+        if unregistered:
+            register_unclassified_artists_batch(unregistered)
 
     # Lay cac chi so Audio DSP tu ban ghi Track neu co
     energy = getattr(track, 'energy', 0.0) if track else 0.0
