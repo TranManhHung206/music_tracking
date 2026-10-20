@@ -10,6 +10,8 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Đăng nhập an toàn trực tiếp bằng tài khoản Spotify thông qua giao thức OAuth 2.0.
 * Tự động thu thập và cập nhật lịch sử nghe nhạc mới nhất vào cơ sở dữ liệu mà không cần thao tác thủ công.
 * Hỗ trợ nút bấm đồng bộ tức thì và cơ chế tự động lấy tiếp các bài hát vừa nghe.
+* Cơ Chế Chống Trùng Lặp Lượt Nghe (Deduplication): Hệ thống đối chiếu chính xác thời điểm bạn nghe từng bài hát (mốc thời gian played_at), chỉ lưu lại những lượt nghe mới và tự động bỏ qua các bản ghi trùng lặp khi nghe lại nhiều lần.
+* Bảo Mật & Mã Hóa Token Spotify: Toàn bộ access token và refresh token của người dùng đều được mã hóa đối xứng AES-256 qua Fernet trước khi lưu vào cơ sở dữ liệu, đảm bảo bí mật tuyệt đối.
 
 ### 2. Bảng Điều Khiển Phân Tích Trực Quan
 * Biểu đồ Radar Đặc tính Âm thanh: Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc chuẩn xác BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát.
@@ -39,7 +41,14 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Gợi ý Bài hát Thông minh: Sử dụng thuật toán Machine Learning (KNN) để tìm kiếm và đề xuất các bài hát có giai điệu, phong cách tương đồng nhất với sở thích của bạn.
 
 
-### 5. Giao Diện Obsidian Dark Mode & Chia Sẻ Mạng Xã Hội
+### 5. Hệ Thống Codebase RAG & Trợ Lý Kiến Trúc Hệ Thống (Knowledge Harness RAG)
+* Truy vấn mã nguồn và kiến trúc: Cho phép đặt câu hỏi kỹ thuật về toàn bộ logic backend (models, services, views, tasks) và tài liệu hệ thống.
+* Thác truy xuất (Retrieval Cascade): Kết hợp Dense Vector (ChromaDB) và Sparse Search (BM25Plus với CodeTokenizer), hợp nhất bằng thuật toán Reciprocal Rank Fusion (RRF k=60) và tái xếp hạng TermSemanticReranker.
+* Trích dẫn kiểm chứng được (Citation Verification): Mọi khẳng định đều có nhãn trích dẫn `[S1]`, `[S2]` nối trực tiếp với file vật lý, vị trí dòng code và tên hàm/lớp (Symbol), ngăn chặn hoàn toàn ảo giác (hallucination).
+* Chế độ phòng vệ Escape Hatch: Tự động nhận diện và từ chối trả lời chính xác khi câu hỏi nằm ngoài phạm vi tài liệu dự án.
+* Tích hợp Agent Tool: Công cụ `@tool search_codebase` cho phép Agentic AI tự động tra cứu mã nguồn trong chu trình ReAct.
+
+### 6. Giao Diện Obsidian Dark Mode & Chia Sẻ Mạng Xã Hội
 * Giao diện tối Obsidian hiện đại, phù hợp với phong cách âm nhạc và tôn mắt khi xem vào ban đêm.
 * Chế độ Xem thử (Demo Mode): Trải nghiệm đầy đủ mọi tính năng với dữ liệu mẫu ngay cả khi chưa kết nối tài khoản Spotify.
 * Xuất Thẻ Chia Sẻ Đa Tỷ Lệ: Tạo thẻ ảnh tổng kết gu âm nhạc và AI Persona độ phân giải cao 2x với 4 tỷ lệ chuẩn mạng xã hội (Story 9:16, Dọc Chân dung 4:5, Vuông Post 1:1, Ngang Banner 16:9). Tích hợp ảnh bìa album và chân dung nghệ sĩ thật từ Spotify, tối ưu bố cục cân đối và phòng vệ lỗi hiển thị.

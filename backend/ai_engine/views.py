@@ -16,12 +16,16 @@ from .serializers import (
     AIMusicPersonaSerializer,
     GeneratePersonaRequestSerializer,
     MusicFactsResponseSerializer,
+    CodebaseQueryRequestSerializer,
+    CodebaseQueryResponseSerializer,
 )
 from .services import (
     generate_and_save_persona,
     get_song_recommendations,
     get_or_generate_music_facts,
+    get_rag_service,
 )
+from .services.rag.retrieval.cascade import PipelineMode
 
 from django.core.cache import cache
 
@@ -115,4 +119,45 @@ class MusicFactsView(APIView):
         )
         serializer = MusicFactsResponseSerializer(result)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CodebaseQueryView(APIView):
+    """API hoi dap thong tin codebase va tai lieu du an qua he thong RAG."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CodebaseQueryRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        query_text = serializer.validated_data['query']
+        mode_str = serializer.validated_data.get('mode', 'full_cascade')
+        top_k = serializer.validated_data.get('top_k', 5)
+        use_cache = serializer.validated_data.get('use_cache', True)
+
+        try:
+            mode_enum = PipelineMode(mode_str)
+        except ValueError:
+            mode_enum = PipelineMode.FULL_CASCADE
+
+        rag_service = get_rag_service()
+        response_obj = rag_service.query(
+            query_text=query_text,
+            mode=mode_enum,
+            final_k=top_k,
+            use_cache=use_cache,
+        )
+
+        res_serializer = CodebaseQueryResponseSerializer(response_obj.model_dump())
+        return Response(res_serializer.data, status=status.HTTP_200_OK)
+
+
+class CodebaseIndexView(APIView):
+    """API quan tri danh chi muc (re-index) toan bo ma nguon va tai lieu."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        rag_service = get_rag_service()
+        stats = rag_service.index_codebase(force=True)
+        return Response(stats, status=status.HTTP_200_OK)
+
 

@@ -18,6 +18,7 @@ from .tools import (
     query_artist_dominance,
     query_tempo_or_energy_contrast,
 )
+from ..rag.tools.search_codebase import search_codebase, SEARCH_CODEBASE_TOOL_SPEC
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,12 @@ ALLOWED_TOOLS = {
     'query_marathon_sessions': query_marathon_sessions,
     'query_artist_dominance': query_artist_dominance,
     'query_tempo_or_energy_contrast': query_tempo_or_energy_contrast,
+    'search_codebase': search_codebase,
 }
 
 # OpenAI Spec Tool Definitions cho Groq Function Calling
 GROQ_TOOL_DEFINITIONS = [
+    SEARCH_CODEBASE_TOOL_SPEC,
     {
         "type": "function",
         "function": {
@@ -113,6 +116,11 @@ def execute_agent_tool(tool_name: str, tool_args: dict, user, start_dt, end_dt) 
         if tool_name == 'query_repeat_loops':
             min_r = tool_args.get('min_repeats', 3)
             return func(user, start_dt, end_dt, min_repeats=min_r)
+        elif tool_name == 'search_codebase':
+            query = tool_args.get('query', '')
+            source_type = tool_args.get('source_type', 'any')
+            top_k = tool_args.get('top_k', 3)
+            return {"result": func(query=query, source_type=source_type, top_k=top_k)}
         else:
             return func(user, start_dt, end_dt)
     except Exception as e:

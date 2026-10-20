@@ -21,6 +21,7 @@ from .facts_agent import (
     run_music_facts_agent,
     generate_heuristic_facts,
 )
+from .rag.service import get_rag_service, CodebaseRAGService
 
 __all__ = [
     'generate_and_save_persona',
@@ -34,5 +35,7 @@ __all__ = [
     'get_or_generate_music_facts',
     'run_music_facts_agent',
     'generate_heuristic_facts',
+    'get_rag_service',
+    'CodebaseRAGService',
 ]
 

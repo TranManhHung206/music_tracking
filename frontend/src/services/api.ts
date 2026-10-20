@@ -17,7 +17,13 @@ import type {
   CalendarPeriodType,
   CalendarPeriodItem,
 } from '../types/analytics';
-import type { AIMusicPersona, RecommendationResult, MusicFactsResponse } from '../types/ai';
+import type {
+  AIMusicPersona,
+  RecommendationResult,
+  MusicFactsResponse,
+  CodebaseQueryResponse,
+  CodebaseQueryPayload,
+} from '../types/ai';
 
 export type TimeFilterInput = TimeRange | { time_range?: string; start_date?: string; end_date?: string };
 
@@ -803,6 +809,17 @@ export const api = {
     } catch {
       return MOCK_MUSIC_FACTS;
     }
+  },
+
+  // Codebase RAG
+  async queryCodebase(payload: CodebaseQueryPayload): Promise<CodebaseQueryResponse> {
+    const res = await apiClient.post('/api/ai/codebase/query/', payload);
+    return res.data;
+  },
+
+  async reindexCodebase(): Promise<{ status: string; chunks_count: number; duration_s: number }> {
+    const res = await apiClient.post('/api/ai/codebase/index/');
+    return res.data;
   },
 };
 

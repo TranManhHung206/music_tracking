@@ -33,6 +33,8 @@ db.sqlite3
 media/
 staticfiles/
 *.log
+backend/ai_engine/data/
+*.pkl
 
 # ==========================================
 # 5. FRONTEND (REACT / NODE_MODULES / BUILD)

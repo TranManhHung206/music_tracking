@@ -13,6 +13,8 @@ from .views import (
     PersonaHistoryView,
     SongRecommendationsView,
     MusicFactsView,
+    CodebaseQueryView,
+    CodebaseIndexView,
 )
 
 app_name = 'ai_engine'
@@ -23,4 +25,6 @@ urlpatterns = [
     path('persona/history/', PersonaHistoryView.as_view(), name='persona_history'),
     path('recommendations/', SongRecommendationsView.as_view(), name='recommendations'),
     path('facts/', MusicFactsView.as_view(), name='music_facts'),
+    path('codebase/query/', CodebaseQueryView.as_view(), name='codebase_query'),
+    path('codebase/index/', CodebaseIndexView.as_view(), name='codebase_index'),
 ]

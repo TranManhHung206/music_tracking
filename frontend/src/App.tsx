@@ -56,6 +56,7 @@ import { WeeklyComparisonChart } from './components/charts/WeeklyComparisonChart
 
 import { PersonaCard } from './components/cards/PersonaCard';
 import { MusicFactsSection } from './components/analytics/MusicFactsSection';
+import { CodebaseAssistantSection } from './components/analytics/CodebaseAssistantSection';
 import { TopTracksList } from './components/cards/TopTracksList';
 import { TopArtistsList } from './components/cards/TopArtistsList';
 import { TopAlbumsList } from './components/cards/TopAlbumsList';
@@ -720,6 +721,11 @@ export function App() {
                   onRefresh={handleRefreshFacts}
                   cooldownSeconds={factsCooldown}
                 />
+              </section>
+
+              {/* 2.2 Codebase & System Architecture Intelligence RAG Section */}
+              <section>
+                <CodebaseAssistantSection onAddToast={addToast} />
               </section>
 
               {/* 3. Deep Visual Analytics: Radar & 24x7 Heatmap */}

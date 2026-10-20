@@ -1,0 +1,182 @@
+[
+  {
+    "id": "Q01",
+    "category": "conceptual",
+    "query": "Quy trình xác thực Spotify OAuth 2.0 trong dự án hoạt động như thế nào?",
+    "expected_files": ["backend/users/services/spotify_auth.py", "backend/users/views.py"],
+    "expected_symbols": ["get_spotify_auth_url", "exchange_code_for_tokens", "SpotifyCallbackView", "SpotifyLoginView"],
+    "ground_truth_answer": "Spotify OAuth Service điều phối luồng OAuth Authorization Code Flow, chuyển hướng người dùng tới Spotify, nhận callback authorization code, tráo đổi access_token và refresh_token, sau đó mã hóa bằng Fernet trước khi lưu vào SpotifyProfile.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q02",
+    "category": "conceptual",
+    "query": "Cơ chế chống trùng lặp lịch sử nghe nhạc (Deduplication) được triển khai như thế nào?",
+    "expected_files": ["backend/tracker/models.py", "backend/tracker/services.py"],
+    "expected_symbols": ["ListeningHistory", "ListeningHistorySyncService"],
+    "ground_truth_answer": "Hệ thống chống trùng lặp dựa trên ràng buộc UniqueConstraint trên cặp (user, played_at) trong model ListeningHistory kết hợp bulk_create với ignore_conflicts=True trong ListeningHistorySyncService.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q03",
+    "category": "conceptual",
+    "query": "Thuật toán KNN gợi ý bài hát sử dụng những Audio Features nào và gán trọng số ra sao?",
+    "expected_files": ["backend/ai_engine/services/knn_recommender.py"],
+    "expected_symbols": ["FEATURE_WEIGHTS", "apply_feature_weights", "get_song_recommendations"],
+    "ground_truth_answer": "Thuật toán KNN sử dụng khoảng cách Euclidean có trọng số trên các đặc trưng âm thanh: danceability (1.5), energy (1.5), valence (1.3), acousticness (1.0), instrumentalness (1.0), speechiness (0.8), và tempo đã chuẩn hóa MinMax (1.0).",
+    "should_abstain": false
+  },
+  {
+    "id": "Q04",
+    "category": "conceptual",
+    "query": "Cơ chế mã hóa và bảo vệ token Spotify trong cơ sở dữ liệu sử dụng thuật toán gì?",
+    "expected_files": ["backend/users/services/encryption.py", "backend/users/models.py"],
+    "expected_symbols": ["get_fernet_cipher", "encrypt_token", "decrypt_token", "SpotifyProfile"],
+    "ground_truth_answer": "Hệ thống sử dụng mã hóa đối xứng AES-256 qua thư viện Cryptography Fernet (get_fernet_cipher, encrypt_token) để mã hóa access_token và refresh_token trước khi lưu vào các trường encrypted_access_token và encrypted_refresh_token của SpotifyProfile.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q05",
+    "category": "conceptual",
+    "query": "Celery Beat lập lịch đồng bộ lịch sử nghe nhạc định kỳ với tần suất bao lâu?",
+    "expected_files": ["backend/config/celery.py", "backend/tracker/tasks.py"],
+    "expected_symbols": ["app.conf.beat_schedule", "sync_all_users_listening_history_task"],
+    "ground_truth_answer": "Celery Beat được cấu hình định kỳ mỗi 15 phút kích hoạt task dispatcher sync_all_users_listening_history_task để chia nhỏ và đồng bộ lịch sử nghe nhạc gần đây của từng người dùng.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q06",
+    "category": "conceptual",
+    "query": "Kiến trúc Model + Harness trong facts agent kiểm soát rủi ro bằng những rào chắn nào?",
+    "expected_files": ["backend/ai_engine/services/facts_agent/harness.py", "backend/ai_engine/services/facts_agent/agent.py"],
+    "expected_symbols": ["ALLOWED_TOOLS", "sanitize_and_verify_facts", "execute_agent_tool"],
+    "ground_truth_answer": "Harness kiểm soát bằng 3 rào chắn cứng: Tool Whitelist (chỉ cho phép gọi các hàm trong ALLOWED_TOOLS), Loop Budget (giới hạn tối đa số vòng lặp ReAct), và Verification Gate (làm sạch JSON, loại bỏ emoji, kiểm tra cấu trúc facts).",
+    "should_abstain": false
+  },
+  {
+    "id": "Q07",
+    "category": "conceptual",
+    "query": "Cách hệ thống tính toán độ tương phản năng lượng (energy) và tiết tấu (tempo) giữa các bài hát?",
+    "expected_files": ["backend/ai_engine/services/facts_agent/tools.py"],
+    "expected_symbols": ["query_tempo_or_energy_contrast"],
+    "ground_truth_answer": "Hàm query_tempo_or_energy_contrast duyệt qua các bài hát nghe liền kề nhau theo mốc thời gian played_at, tính chênh lệch tuyệt đối về energy và tempo giữa 2 bài hát kề nhau để phát hiện sự thay đổi cảm xúc đột ngột.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q08",
+    "category": "identifier",
+    "query": "Hàm query_night_owl_anomaly nằm ở file nào và kiểm tra khung giờ nào?",
+    "expected_files": ["backend/ai_engine/services/facts_agent/tools.py"],
+    "expected_symbols": ["query_night_owl_anomaly"],
+    "ground_truth_answer": "Hàm query_night_owl_anomaly nằm tại backend/ai_engine/services/facts_agent/tools.py và kiểm tra các lượt nghe trong khung giờ đêm khuya từ 00:00 đến 05:00 sáng.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q09",
+    "category": "identifier",
+    "query": "Ràng buộc UniqueConstraint trên model ListeningHistory gồm những trường nào?",
+    "expected_files": ["backend/tracker/models.py"],
+    "expected_symbols": ["ListeningHistory"],
+    "ground_truth_answer": "Ràng buộc UniqueConstraint trên model ListeningHistory gồm cặp trường ['user', 'played_at'] với tên ràng buộc là 'unique_user_track_played_at'.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q10",
+    "category": "identifier",
+    "query": "API POST /api/ai/persona/generate/ có thời gian cooldown anti-spam là bao nhiêu giây?",
+    "expected_files": ["backend/ai_engine/views.py"],
+    "expected_symbols": ["PersonaGenerateView"],
+    "ground_truth_answer": "Endpoint PersonaGenerateView cấu hình khóa cooldown anti-spam user_persona_cooldown:{user_id} trong cache với thời gian timeout là 15 giây.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q11",
+    "category": "identifier",
+    "query": "Hàm get_fernet_cipher nạp khóa bí mật từ setting nào trong dự án?",
+    "expected_files": ["backend/users/services/encryption.py", "backend/config/settings.py"],
+    "expected_symbols": ["get_fernet_cipher", "FERNET_SECRET_KEY"],
+    "ground_truth_answer": "Hàm get_fernet_cipher nạp khóa bí mật từ setting FERNET_SECRET_KEY trong settings.py.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q12",
+    "category": "identifier",
+    "query": "Hàm get_song_recommendations trong service KNN có giá trị top_k mặc định là bao nhiêu?",
+    "expected_files": ["backend/ai_engine/services/knn_recommender.py", "backend/ai_engine/views.py"],
+    "expected_symbols": ["get_song_recommendations", "SongRecommendationsView"],
+    "ground_truth_answer": "Giá trị top_k mặc định trong get_song_recommendations là 5 bài hát tương đồng nhất.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q13",
+    "category": "identifier",
+    "query": "Hàm extract_track_vector trích xuất những trường đặc trưng âm thanh nào từ model Track?",
+    "expected_files": ["backend/ai_engine/services/knn_recommender.py"],
+    "expected_symbols": ["extract_track_vector"],
+    "ground_truth_answer": "Hàm extract_track_vector trích xuất 7 trường: danceability, energy, valence, acousticness, instrumentalness, speechiness và tempo đã chuẩn hóa.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q14",
+    "category": "identifier",
+    "query": "Task sync_recently_played_tracks_task trong tracker được cấu hình max_retries là bao nhiêu?",
+    "expected_files": ["backend/tracker/tasks.py"],
+    "expected_symbols": ["sync_recently_played_tracks_task"],
+    "ground_truth_answer": "Task sync_recently_played_tracks_task được cấu hình max_retries=3 và default_retry_delay=60 giây.",
+    "should_abstain": false
+  },
+  {
+    "id": "Q15",
+    "category": "trick",
+    "query": "Hệ thống hỗ trợ đăng nhập bằng tài khoản Apple Music như thế nào?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  },
+  {
+    "id": "Q16",
+    "category": "trick",
+    "query": "Mô hình YOLOv8 nhận diện bìa album nằm ở file nào trong dự án?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  },
+  {
+    "id": "Q17",
+    "category": "trick",
+    "query": "Cổng thanh toán Stripe được tích hợp tại view nào trong backend?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  },
+  {
+    "id": "Q18",
+    "category": "trick",
+    "query": "Thuật toán phân cụm K-Means cho người dùng cấu hình k bằng mấy?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  },
+  {
+    "id": "Q19",
+    "category": "trick",
+    "query": "Hàm đồng bộ danh sách phát từ Youtube Music tên là gì?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  },
+  {
+    "id": "Q20",
+    "category": "trick",
+    "query": "Database PostgreSQL được cấu hình sharding theo tháng ở file nào?",
+    "expected_files": [],
+    "expected_symbols": [],
+    "ground_truth_answer": "Không đủ căn cứ trong tài liệu hoặc mã nguồn để trả lời câu hỏi này.",
+    "should_abstain": true
+  }
+]
