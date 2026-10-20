@@ -51,3 +51,36 @@ class MusicFactsResponseSerializer(serializers.Serializer):
     period_key = serializers.CharField()
     period_label = serializers.CharField()
 
+
+class CodebaseQueryRequestSerializer(serializers.Serializer):
+    """Validate tham so dau vao khi hoi dap codebase qua RAG."""
+    query = serializers.CharField(required=True, min_length=2, max_length=1000)
+    mode = serializers.ChoiceField(
+        choices=['baseline_dense', 'hybrid_rrf', 'full_cascade'],
+        default='full_cascade',
+        required=False,
+    )
+    top_k = serializers.IntegerField(default=5, min_value=1, max_value=10, required=False)
+    use_cache = serializers.BooleanField(default=True, required=False)
+
+
+class CitationItemSerializer(serializers.Serializer):
+    """Serializer hien thi chi tiet tung trich dan nguon."""
+    citation_id = serializers.CharField()
+    file_path = serializers.CharField()
+    line_start = serializers.IntegerField()
+    line_end = serializers.IntegerField()
+    symbol = serializers.CharField(allow_null=True, required=False)
+    snippet = serializers.CharField()
+
+
+class CodebaseQueryResponseSerializer(serializers.Serializer):
+    """Serializer tra ve ket qua hoi dap codebase kem trich dan."""
+    query = serializers.CharField()
+    answer = serializers.CharField()
+    citations = CitationItemSerializer(many=True)
+    verification = serializers.DictField()
+    latency_ms = serializers.FloatField()
+    retrieved_chunks_count = serializers.IntegerField()
+
+

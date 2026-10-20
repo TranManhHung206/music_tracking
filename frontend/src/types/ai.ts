@@ -67,3 +67,37 @@ export interface MusicFactsResponse {
   period_label: string;
 }
 
+export interface CitationItem {
+  citation_id: string;
+  file_path: string;
+  line_start: number;
+  line_end: number;
+  symbol?: string | null;
+  snippet: string;
+}
+
+export interface CodebaseQueryResponse {
+  query: string;
+  answer: string;
+  citations: CitationItem[];
+  verification: {
+    is_escape_hatch?: boolean;
+    total_citations: number;
+    valid_context_citations: number;
+    valid_file_citations: number;
+    citation_existence_rate: number;
+    citation_accuracy: number;
+    all_valid: boolean;
+  };
+  latency_ms: number;
+  retrieved_chunks_count: number;
+}
+
+export interface CodebaseQueryPayload {
+  query: string;
+  mode?: 'baseline_dense' | 'hybrid_rrf' | 'full_cascade';
+  top_k?: number;
+  use_cache?: boolean;
+}
+
+
