@@ -1,5 +1,5 @@
-import axios from 'axios';
-import type { UserProfile } from '../types/auth';
+import axios, { AxiosError } from 'axios';
+import type { UserProfile, SpotifyExchangeResponse } from '../types/auth';
 import type {
   TimeRange,
   SummaryStats,
@@ -35,6 +35,50 @@ function buildTimeParams(filter?: TimeFilterInput): string {
   if (filter.start_date) parts.push(`start_date=${filter.start_date}`);
   if (filter.end_date) parts.push(`end_date=${filter.end_date}`);
   return parts.length > 0 ? parts.join('&') : 'time_range=30d';
+}
+
+export class ApiError extends Error {
+  status?: number;
+  retryAfterSeconds?: number;
+
+  constructor(message: string, status?: number, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function toApiError(err: unknown, fallbackMessage: string): ApiError {
+  if (err instanceof ApiError) return err;
+  if (axios.isAxiosError(err)) {
+    const axiosErr = err as AxiosError<{ error?: string; detail?: string; retry_after_seconds?: number }>;
+    const status = axiosErr.response?.status;
+    const serverMsg = axiosErr.response?.data?.error || axiosErr.response?.data?.detail;
+    const retryAfter = axiosErr.response?.data?.retry_after_seconds;
+
+    if (status === 401) {
+      return new ApiError('Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.', 401);
+    }
+    if (status === 403) {
+      return new ApiError(serverMsg || 'Bạn không có quyền thực hiện thao tác này.', 403);
+    }
+    if (status === 429) {
+      return new ApiError(
+        serverMsg || 'Hệ thống đang bị giới hạn tần suất yêu cầu. Vui lòng thử lại sau.',
+        429,
+        retryAfter
+      );
+    }
+    if (!axiosErr.response) {
+      return new ApiError('Không thể kết nối đến máy chủ Backend. Vui lòng kiểm tra kết nối mạng.', undefined);
+    }
+    return new ApiError(serverMsg || fallbackMessage, status, retryAfter);
+  }
+  if (err instanceof Error) {
+    return new ApiError(err.message || fallbackMessage);
+  }
+  return new ApiError(fallbackMessage);
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -160,12 +204,23 @@ export const MOCK_RADAR: RadarData = {
   time_range: '30d',
   total_tracks_analyzed: 428,
   features: [
-    { attribute: 'Valence', score: 0.65, description: 'Tích cực, vui tươi' },
-    { attribute: 'Energy', score: 0.78, description: 'Sôi động, mạnh mẽ' },
-    { attribute: 'Danceability', score: 0.72, description: 'Dễ nhảy, nhịp điệu rõ' },
-    { attribute: 'Acousticness', score: 0.35, description: 'Mộc mạc, ít điện tử' },
-    { attribute: 'Tempo', score: 0.62, description: 'Tốc độ nhịp BPM chuẩn hóa' },
+    { attribute: 'valence', score: 0.65, description: 'Tích cực, vui tươi' },
+    { attribute: 'energy', score: 0.78, description: 'Sôi động, mạnh mẽ' },
+    { attribute: 'danceability', score: 0.72, description: 'Dễ nhảy, nhịp điệu rõ' },
+    { attribute: 'acousticness', score: 0.35, description: 'Mộc mạc, ít điện tử' },
+    { attribute: 'tempo_normalized', score: 0.62, description: 'Tốc độ nhịp BPM chuẩn hóa' },
   ],
+  provenance: {
+    spotify: 0,
+    dsp_preview: 410,
+    estimated: 18,
+    legacy_unknown: 0,
+    unavailable: 0,
+    total_plays: 428,
+    measured_percentage: 95.8,
+    has_estimates: true,
+    has_legacy_unknown: false,
+  },
 };
 
 export const MOCK_MONTH_CALENDAR: MonthHeatmapData = {
@@ -347,6 +402,10 @@ export const MOCK_TOP_ALBUMS: TopAlbum[] = [
 
 export const MOCK_WEEKLY_COMPARISON: WeeklyComparisonData = {
   time_range: '7d',
+  period_type: 'week',
+  granularity: 'day',
+  current_label: 'Tuần này (05/10 - 11/10)',
+  previous_label: 'Tuần trước (28/09 - 04/10)',
   current_week_label: 'Tuần này (05/10 - 11/10)',
   previous_week_label: 'Tuần trước (28/09 - 04/10)',
   days: [
@@ -359,9 +418,14 @@ export const MOCK_WEEKLY_COMPARISON: WeeklyComparisonData = {
     { day_index: 7, day_name: 'Chủ Nhật', day_name_en: 'Sun', current_week_plays: 38, previous_week_plays: 32, diff: 6 },
   ],
   summary: {
+    total_current: 311,
+    total_previous: 250,
     total_current_week: 311,
     total_previous_week: 250,
     growth_percentage: 24.4,
+    baseline_status: 'normal',
+    peak_label: 'Thứ 6',
+    peak_plays: 65,
     peak_day_current: 'Thứ 6',
     peak_plays_current: 65,
   },
@@ -392,7 +456,7 @@ export const MOCK_GENRES: GenreDistributionData = {
     { name: 'Global Pop', plays: 120, percentage: 28.0, color: '#06B6D4' },
     { name: 'V-Pop', plays: 68, percentage: 15.9, color: '#EC4899' },
     { name: 'US-UK / Pop', plays: 35, percentage: 8.2, color: '#3B82F6' },
-    { name: 'Acoustic / Lo-Fi', plays: 20, percentage: 4.7, color: '#A855F7' },
+    { name: 'Acoustic / Lo-Fi', plays: 20, percentage: 4.7, color: '#10B981' },
   ],
   total_plays: 428,
   top_genre: 'EDM / Electronic',
@@ -583,15 +647,56 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
 export const MOCK_CALENDAR_PERIODS: Record<CalendarPeriodType, CalendarPeriodItem[]> = getDynamicMockCalendarPeriods();
 
 
-// API Services voi Graceful Fallback sang Mock Data
+export function buildMockRecommendations(trackId: string): RecommendationResult {
+  return {
+    seed_track: {
+      spotify_id: trackId,
+      name: 'Bài hát gốc (Demo)',
+      artists: ['Nghệ sĩ mẫu'],
+      album: 'Album mẫu',
+      image_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop',
+    },
+    recommendations: [
+      {
+        spotify_id: 'rec_1',
+        name: 'Âm Hưởng Tương Đồng 1',
+        artists: ['Nghệ sĩ tương đồng'],
+        album: 'Album tương đồng',
+        image_url: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop',
+        similarity_score: 0.94,
+      },
+      {
+        spotify_id: 'rec_2',
+        name: 'Âm Hưởng Tương Đồng 2',
+        artists: ['Nghệ sĩ tương đồng'],
+        album: 'Album tương đồng',
+        image_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+        similarity_score: 0.88,
+      },
+    ],
+  };
+}
+
+// API Services (khong tra ve du lieu gia khi nguoi dung da dang nhap gap loi)
 export const api = {
   // Auth
   async getLoginUrl(): Promise<string> {
     try {
       const res = await apiClient.get('/api/users/spotify/login/');
       return res.data.auth_url;
-    } catch {
-      return '#';
+    } catch (err) {
+      throw toApiError(err, 'Không thể khởi tạo đường dẫn đăng nhập Spotify.');
+    }
+  },
+
+  async exchangeSpotifyCode(exchangeCode: string): Promise<SpotifyExchangeResponse> {
+    try {
+      const res = await apiClient.post('/api/users/spotify/exchange/', {
+        exchange_code: exchangeCode,
+      });
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể hoàn tất trao đổi phiên đăng nhập Spotify.');
     }
   },
 
@@ -603,9 +708,13 @@ export const api = {
     try {
       const res = await apiClient.get('/api/users/me/');
       return res.data.user || res.data;
-    } catch {
-      localStorage.removeItem('access_token');
-      return null;
+    } catch (err) {
+      const apiErr = toApiError(err, 'Không thể xác minh phiên đăng nhập.');
+      if (apiErr.status === 401 || apiErr.status === 403) {
+        localStorage.removeItem('access_token');
+        return null;
+      }
+      throw apiErr;
     }
   },
 
@@ -619,8 +728,12 @@ export const api = {
 
   // Tracker
   async triggerSync(): Promise<{ scrobbled_count: number; message?: string }> {
-    const res = await apiClient.post('/api/tracker/sync/');
-    return res.data;
+    try {
+      const res = await apiClient.post('/api/tracker/sync/');
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể đồng bộ dữ liệu từ Spotify.');
+    }
   },
 
   async getListeningHistory(limit: number = 20): Promise<ListeningHistoryRecord[]> {
@@ -632,9 +745,9 @@ export const api = {
       if (res.data && Array.isArray(res.data.results)) {
         return res.data.results;
       }
-      return MOCK_LISTENING_HISTORY.slice(0, limit);
-    } catch {
-      return MOCK_LISTENING_HISTORY.slice(0, limit);
+      return [];
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải nhật ký nghe nhạc gần đây.');
     }
   },
 
@@ -645,9 +758,9 @@ export const api = {
       if (res.data && Array.isArray(res.data.periods)) {
         return res.data.periods;
       }
-      return MOCK_CALENDAR_PERIODS[periodType] || [];
-    } catch {
-      return MOCK_CALENDAR_PERIODS[periodType] || [];
+      return [];
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải danh sách kỳ thống kê.');
     }
   },
 
@@ -657,9 +770,8 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/analytics/summary/?${params}`);
       return res.data;
-    } catch {
-      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
-      return { ...MOCK_SUMMARY, time_range: rangeStr };
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải số liệu tổng quan.');
     }
   },
 
@@ -667,9 +779,9 @@ export const api = {
     const params = buildTimeParams(filter);
     try {
       const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`);
-      return res.data.tracks || res.data;
-    } catch {
-      return MOCK_TOP_TRACKS.slice(0, limit);
+      return Array.isArray(res.data?.tracks) ? res.data.tracks : [];
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải danh sách Top bài hát.');
     }
   },
 
@@ -677,9 +789,9 @@ export const api = {
     const params = buildTimeParams(filter);
     try {
       const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`);
-      return res.data.artists || res.data;
-    } catch {
-      return MOCK_TOP_ARTISTS.slice(0, limit);
+      return Array.isArray(res.data?.artists) ? res.data.artists : [];
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải danh sách Top nghệ sĩ.');
     }
   },
 
@@ -687,9 +799,9 @@ export const api = {
     const params = buildTimeParams(filter);
     try {
       const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`);
-      return res.data.albums || res.data;
-    } catch {
-      return MOCK_TOP_ALBUMS.slice(0, limit);
+      return Array.isArray(res.data?.albums) ? res.data.albums : [];
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải danh sách Top album.');
     }
   },
 
@@ -698,9 +810,8 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/analytics/radar/?${params}`);
       return res.data;
-    } catch {
-      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
-      return { ...MOCK_RADAR, time_range: rangeStr };
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải biểu đồ đặc trưng âm thanh.');
     }
   },
 
@@ -710,9 +821,8 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`);
       return res.data;
-    } catch {
-      const rangeStr = typeof filter === 'string' ? filter : (filter?.time_range || '30d');
-      return { ...MOCK_HEATMAP, time_range: rangeStr, period_type: (periodType as 'week' | 'month' | 'year') || 'week' };
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải bản đồ nhiệt nghe nhạc.');
     }
   },
 
@@ -721,18 +831,19 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`);
       return res.data;
-    } catch {
-      return MOCK_RACE;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải dữ liệu Bar Chart Race.');
     }
   },
 
-  async getWeeklyComparison(filter?: TimeFilterInput): Promise<WeeklyComparisonData> {
+  async getWeeklyComparison(filter?: TimeFilterInput, periodType?: CalendarPeriodType): Promise<WeeklyComparisonData> {
     const params = buildTimeParams(filter);
+    const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${params}`);
+      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${fullParams}`);
       return res.data;
-    } catch {
-      return MOCK_WEEKLY_COMPARISON;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải dữ liệu so sánh xu hướng.');
     }
   },
 
@@ -741,18 +852,22 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/analytics/genres/?${params}`);
       return res.data;
-    } catch {
-      return MOCK_GENRES;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải phân bố thể loại âm nhạc.');
     }
   },
 
   // AI Insights
-  async getLatestPersona(period: string = 'monthly'): Promise<AIMusicPersona> {
+  async getLatestPersona(period: string = 'monthly'): Promise<AIMusicPersona | null> {
     try {
       const res = await apiClient.get(`/api/ai/persona/latest/?period_type=${period}`);
-      return res.data;
-    } catch {
-      return MOCK_PERSONA;
+      const data = res.data;
+      if (!data || typeof data !== 'object' || !data.persona_title || !data.mood_distribution) {
+        return null;
+      }
+      return data as AIMusicPersona;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải hồ sơ AI Music Persona.');
     }
   },
 
@@ -760,8 +875,8 @@ export const api = {
     try {
       const res = await apiClient.post('/api/ai/persona/generate/', { period_type: period });
       return res.data;
-    } catch {
-      return MOCK_PERSONA;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tạo phân tích AI Music Persona.');
     }
   },
 
@@ -769,34 +884,8 @@ export const api = {
     try {
       const res = await apiClient.get(`/api/ai/recommendations/?track_id=${trackId}&top_k=${topK}`);
       return res.data;
-    } catch {
-      return {
-        seed_track: {
-          spotify_id: trackId,
-          name: 'Bài hát gốc',
-          artists: ['Nghệ sĩ mẫu'],
-          album: 'Album mẫu',
-          image_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop',
-        },
-        recommendations: [
-          {
-            spotify_id: 'rec_1',
-            name: 'Âm Hưởng Tương Đồng 1',
-            artists: ['Nghệ sĩ tương đồng'],
-            album: 'Album tương đồng',
-            image_url: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop',
-            similarity_score: 0.94,
-          },
-          {
-            spotify_id: 'rec_2',
-            name: 'Âm Hưởng Tương Đồng 2',
-            artists: ['Nghệ sĩ tương đồng'],
-            album: 'Album tương đồng',
-            image_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
-            similarity_score: 0.88,
-          },
-        ],
-      };
+    } catch (err) {
+      throw toApiError(err, 'Không thể tìm các bài hát tương đồng.');
     }
   },
 
@@ -806,20 +895,28 @@ export const api = {
       const triggerParam = trigger ? '&trigger=true' : '';
       const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`);
       return res.data;
-    } catch {
-      return MOCK_MUSIC_FACTS;
+    } catch (err) {
+      throw toApiError(err, 'Không thể tải phân tích từ AI Music Detective.');
     }
   },
 
   // Codebase RAG
   async queryCodebase(payload: CodebaseQueryPayload): Promise<CodebaseQueryResponse> {
-    const res = await apiClient.post('/api/ai/codebase/query/', payload);
-    return res.data;
+    try {
+      const res = await apiClient.post('/api/ai/codebase/query/', payload);
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể kết nối đến hệ thống trợ lý RAG.');
+    }
   },
 
   async reindexCodebase(): Promise<{ status: string; chunks_count: number; duration_s: number }> {
-    const res = await apiClient.post('/api/ai/codebase/index/');
-    return res.data;
+    try {
+      const res = await apiClient.post('/api/ai/codebase/index/');
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể lập chỉ mục lại hệ thống.');
+    }
   },
 };
 

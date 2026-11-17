@@ -1,15 +1,22 @@
 """
 Views cho app users.
-Xu ly cac HTTP request dang nhap, callback, lay profile va dang xuat.
+Xu ly cac HTTP request dang nhap, callback (kem xac thuc state va exchange_code), lay profile va dang xuat.
 """
 
+import logging
+import secrets
+from urllib.parse import quote, urlparse
+
+from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.shortcuts import redirect
 from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import SpotifyProfile
 from .serializers import SpotifyProfileSerializer
@@ -19,14 +26,50 @@ from .services.spotify_auth import (
     fetch_spotify_profile,
 )
 
+logger = logging.getLogger(__name__)
+
+OAUTH_STATE_TTL = 600
+OAUTH_EXCHANGE_TTL = 60
+
+
+def _get_safe_frontend_url() -> str:
+    """Lay URL Frontend hop le da duoc kiem duyet qua allowlist."""
+    base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+    allowed = getattr(settings, 'ALLOWED_FRONTEND_ORIGINS', [base])
+    parsed = urlparse(base)
+    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ''
+    if origin and origin in allowed:
+        return base
+    return allowed[0].rstrip('/') if allowed else 'http://localhost:5173'
+
+
+def _consume_oauth_state(request, state: str | None) -> bool:
+    """Xac thuc va tieu huy state token 1 lan (ho tro ca Cache lan Session)."""
+    if not state:
+        return False
+
+    cache_key = f"spotify_oauth_state:{state}"
+    session_state = request.session.pop('spotify_oauth_state', None)
+    cached_valid = cache.get(cache_key)
+    if cached_valid:
+        cache.delete(cache_key)
+        return True
+
+    if session_state and secrets.compare_digest(str(session_state), str(state)):
+        return True
+
+    return False
+
+
 class SpotifyLoginView(APIView):
-    """Khoi tao luong dang nhap Spotify OAuth 2.0 va tra ve Auth URL."""
+    """Khoi tao luong dang nhap Spotify OAuth 2.0 va tra ve Auth URL kem state."""
     permission_classes = [AllowAny]
 
     def get(self, request):
         try:
             auth_url, state = generate_spotify_auth_url()
             request.session['spotify_oauth_state'] = state
+            cache.set(f"spotify_oauth_state:{state}", True, timeout=OAUTH_STATE_TTL)
             return Response({"auth_url": auth_url, "state": state})
         except Exception as e:
             return Response(
@@ -34,69 +77,63 @@ class SpotifyLoginView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
 class SpotifyCallbackView(APIView):
-    """Tiep nhan Auth Code tu Spotify, doi lay tokens va khoi tao profile."""
+    """Tiep nhan Auth Code tu Spotify, xac thuc state, doi token va cap one-time exchange_code."""
     permission_classes = [AllowAny]
 
     def get(self, request):
         code = request.GET.get('code')
+        state = request.GET.get('state')
         error = request.GET.get('error')
         is_browser = 'text/html' in request.headers.get('Accept', '')
-
-        print(f"[SpotifyCallbackView] >>> BUOC 1: Nhan request callback (code_len={len(code) if code else 0}, error={error})", flush=True)
+        frontend_url = _get_safe_frontend_url()
 
         if error:
             if is_browser:
-                from urllib.parse import quote
-                return redirect(f"http://localhost:5173/?auth_error={quote(f'Spotify tra ve loi: {error}')}")
+                return redirect(f"{frontend_url}/?auth_error={quote(f'Spotify tra ve loi: {error}')}")
             return Response({"error": f"Spotify tra ve loi: {error}"}, status=status.HTTP_400_BAD_REQUEST)
-        if not code:
+
+        if not _consume_oauth_state(request, state):
+            msg = "Phien xac thuc Spotify khong hop le hoac da het han (State mismatch). Vui long dang nhap lai."
             if is_browser:
-                from urllib.parse import quote
-                return redirect(f"http://localhost:5173/?auth_error={quote('Thieu tham so code tu Spotify.')}")
-            return Response({"error": "Thieu tham so code tu Spotify."}, status=status.HTTP_400_BAD_REQUEST)
+                return redirect(f"{frontend_url}/?auth_error={quote(msg)}")
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not code:
+            msg = "Thieu tham so code tu Spotify."
+            if is_browser:
+                return redirect(f"{frontend_url}/?auth_error={quote(msg)}")
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            print("[SpotifyCallbackView] >>> BUOC 2: Dang doi code lay token tu accounts.spotify.com...", flush=True)
             token_data = exchange_code_for_tokens(code)
             access_token = token_data.get('access_token')
             refresh_token = token_data.get('refresh_token')
             expires_in = token_data.get('expires_in', 3600)
-            print(f"[SpotifyCallbackView] >>> BUOC 2 XONG: Da nhan access_token (len={len(access_token) if access_token else 0})", flush=True)
-
-            print("[SpotifyCallbackView] >>> BUOC 3: Dang lay thong tin profile tu api.spotify.com/v1/me...", flush=True)
-            spotify_id = None
-            display_name = None
-            email = None
-            country = None
-            avatar_url = None
 
             try:
                 spotify_user_data = fetch_spotify_profile(access_token)
-                spotify_id = spotify_user_data.get('id')
-                display_name = spotify_user_data.get('display_name') or spotify_id
-                email = spotify_user_data.get('email')
-                country = spotify_user_data.get('country')
-                images = spotify_user_data.get('images', [])
-                avatar_url = images[0].get('url') if images else None
-                print(f"[SpotifyCallbackView] >>> BUOC 3 XONG: Profile: {display_name} ({spotify_id})", flush=True)
             except Exception as profile_err:
-                print(f"[SpotifyCallbackView] >>> BUOC 3 CANH BAO: Spotify Profile API bi loi/timeout ({profile_err}). Kich hoat Fallback DB Profile...", flush=True)
-                existing_profile = SpotifyProfile.objects.first()
-                if existing_profile:
-                    spotify_id = existing_profile.spotify_id
-                    display_name = existing_profile.display_name
-                    email = existing_profile.email
-                    country = existing_profile.country
-                    avatar_url = existing_profile.avatar_url
-                    print(f"[SpotifyCallbackView] >>> BUOC 3 FALLBACK: Su dung profile san co: {display_name} ({spotify_id})", flush=True)
-                else:
-                    spotify_id = "spotify_user_local"
-                    display_name = "Spotify User"
-                    print("[SpotifyCallbackView] >>> BUOC 3 FALLBACK: Khoi tao profile tam thoi.", flush=True)
+                logger.warning("Spotify /v1/me profile lookup failed during OAuth callback: %s", profile_err)
+                fail_msg = "Khong the xac minh danh tinh tai khoan Spotify. Vui long thu dang nhap lai."
+                if is_browser:
+                    return redirect(f"{frontend_url}/?auth_error={quote(fail_msg)}")
+                return Response({"error": fail_msg}, status=status.HTTP_502_BAD_GATEWAY)
 
-            # Dong bo User he thong
-            print("[SpotifyCallbackView] >>> BUOC 4: Dang cap nhat DB User & SpotifyProfile...", flush=True)
+            spotify_id = spotify_user_data.get('id')
+            if not spotify_id:
+                fail_msg = "Spotify khong tra ve ma dinh danh tai khoan hop le."
+                if is_browser:
+                    return redirect(f"{frontend_url}/?auth_error={quote(fail_msg)}")
+                return Response({"error": fail_msg}, status=status.HTTP_502_BAD_GATEWAY)
+
+            display_name = spotify_user_data.get('display_name') or spotify_id
+            email = spotify_user_data.get('email')
+            country = spotify_user_data.get('country')
+            images = spotify_user_data.get('images', [])
+            avatar_url = images[0].get('url') if images else None
+
             username = f"spotify_{spotify_id}"
             user, _ = User.objects.get_or_create(username=username, defaults={'email': email or ''})
 
@@ -112,38 +149,36 @@ class SpotifyCallbackView(APIView):
             profile.is_sync_active = True
             profile.set_tokens(access_token, refresh_token, expires_in)
             profile.save()
-            print("[SpotifyCallbackView] >>> BUOC 4 XONG: Da luu DB thanh cong.", flush=True)
 
             try:
                 login(request, user)
             except Exception as login_err:
-                print(f"[SpotifyCallbackView] Canh bao session login: {login_err}", flush=True)
+                logger.warning("Session login warning: %s", login_err)
 
-            from rest_framework.authtoken.models import Token
             token, _ = Token.objects.get_or_create(user=user)
 
-            # Xoa cache phan tich cu de dam bao phien moi luon load du lieu moi nhat
             try:
                 from analytics.services.caching import invalidate_user_analytics_cache
                 invalidate_user_analytics_cache(user.id)
             except Exception:
                 pass
 
-            # Tu dong dong bo lich su nghe nhac moi nhat vao DB ngay sau khi dang nhap
             try:
                 import threading
                 from tracker.services.ingestion import sync_user_recently_played_pipeline
                 threading.Thread(target=sync_user_recently_played_pipeline, args=(user,), daemon=True).start()
-                print("[SpotifyCallbackView] >>> BUOC 4.1: Da khoi chay sync Spotify ngam luu vao DB.", flush=True)
             except Exception as sync_err:
-                print(f"[SpotifyCallbackView] Canh bao khoi chay sync ngam: {sync_err}", flush=True)
+                logger.warning("Background sync start warning: %s", sync_err)
 
-
-            # Neu request den tu trinh duyet thi chuyen huong ve Frontend kem Auth Token
             redirect_to_frontend = request.GET.get('redirect', 'true').lower() == 'true'
             if is_browser and redirect_to_frontend:
-                print(f"[SpotifyCallbackView] >>> BUOC 5: Chuyen huong ve Frontend (http://localhost:5173/?token=...)", flush=True)
-                return redirect(f"http://localhost:5173/?token={token.key}&auth_success=true")
+                exchange_code = secrets.token_urlsafe(32)
+                cache.set(
+                    f"oauth_exchange:{exchange_code}",
+                    {"token": token.key, "user_id": user.id},
+                    timeout=OAUTH_EXCHANGE_TTL,
+                )
+                return redirect(f"{frontend_url}/?exchange_code={exchange_code}&auth_success=true")
 
             serializer = SpotifyProfileSerializer(profile)
             return Response({
@@ -154,19 +189,65 @@ class SpotifyCallbackView(APIView):
 
         except Exception as e:
             err_str = str(e)
-            print(f"[SpotifyCallbackView] >>> LOI: {err_str}", flush=True)
+            logger.error("Spotify callback exception: %s", err_str)
             if is_browser:
-                from urllib.parse import quote
                 if "timed out" in err_str.lower() or "connecttimeout" in err_str.lower() or "max retries exceeded" in err_str.lower():
                     friendly_msg = "Ket noi may chu Spotify qua thoi gian do mang quoc te cham. Vui long bam Dang nhap lai!"
                 else:
-                    friendly_msg = f"Loi xac thuc Spotify: {err_str}"
-                return redirect(f"http://localhost:5173/?auth_error={quote(friendly_msg)}")
+                    friendly_msg = "Loi xac thuc Spotify. Vui long thu lai."
+                return redirect(f"{frontend_url}/?auth_error={quote(friendly_msg)}")
 
             return Response(
-                {"error": f"Loi trong qua trinh tiep nhan callback: {str(e)}"},
+                {"error": f"Loi trong qua trinh tiep nhan callback: {err_str}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class SpotifyExchangeCodeView(APIView):
+    """Doi one-time exchange_code lay DRF auth token va thong tin user."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        exchange_code = (request.data.get('exchange_code') or '').strip()
+        if not exchange_code:
+            return Response(
+                {"error": "Thieu ma trao doi exchange_code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cache_key = f"oauth_exchange:{exchange_code}"
+        payload = cache.get(cache_key)
+        if not payload or not isinstance(payload, dict):
+            return Response(
+                {"error": "Ma trao doi khong hop le hoac da het han."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Tieu huy ngay lap tuc de bao dam chi dung 1 lan
+        cache.delete(cache_key)
+
+        user_id = payload.get('user_id')
+        token_key = payload.get('token')
+        if not user_id or not token_key:
+            return Response(
+                {"error": "Du lieu trao doi khong hop le."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            profile = SpotifyProfile.objects.select_related('user').get(user_id=user_id)
+        except SpotifyProfile.DoesNotExist:
+            return Response(
+                {"error": "Khong tim thay ho so nguoi dung."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = SpotifyProfileSerializer(profile)
+        return Response({
+            "token": token_key,
+            "user": serializer.data,
+        }, status=status.HTTP_200_OK)
+
 
 class CurrentUserView(APIView):
     """Tra ve thong tin nguoi dung dang dang nhap hien tai."""
@@ -183,6 +264,7 @@ class CurrentUserView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+
 class LogoutView(APIView):
     """Dang xuat va xoa phien lam viec."""
     permission_classes = [AllowAny]
@@ -195,6 +277,7 @@ class LogoutView(APIView):
                 pass
         logout(request)
         return Response({"message": "Dang xuat thanh cong."}, status=status.HTTP_200_OK)
+
 
 class DisconnectSpotifyView(APIView):
     """Ngat ket noi va xoa token Spotify cua nguoi dung."""

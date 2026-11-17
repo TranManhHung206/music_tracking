@@ -12,6 +12,17 @@ export interface AIMusicPersona {
   created_at?: string;
 }
 
+export function isValidPersona(persona?: AIMusicPersona | null): persona is AIMusicPersona {
+  return Boolean(
+    persona &&
+      typeof persona === 'object' &&
+      typeof persona.persona_title === 'string' &&
+      persona.persona_title.trim().length > 0 &&
+      persona.mood_distribution &&
+      typeof persona.mood_distribution === 'object'
+  );
+}
+
 export interface SongRecommendation {
   spotify_id: string;
   name: string;

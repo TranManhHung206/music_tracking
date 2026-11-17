@@ -165,20 +165,27 @@ REST_FRAMEWORK = {
 # ==========================================
 from corsheaders.defaults import default_headers
 
-CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+_raw_cors_origins = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000',
+)
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
+    origin.strip().rstrip('/') for origin in _raw_cors_origins.split(',') if origin.strip()
 ]
+_raw_csrf_origins = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173',
+)
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
+    origin.strip().rstrip('/') for origin in _raw_csrf_origins.split(',') if origin.strip()
 ]
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-timezone',
 ]
+
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173').strip().rstrip('/')
+ALLOWED_FRONTEND_ORIGINS = list(dict.fromkeys([FRONTEND_URL] + CORS_ALLOWED_ORIGINS))
 
 # ==========================================
 # EXTERNAL API & ENCRYPTION CONFIGURATION

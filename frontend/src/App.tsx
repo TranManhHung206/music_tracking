@@ -8,6 +8,7 @@ import {
   ArrowRight,
   CalendarOff,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 
 import type { UserProfile } from './types/auth';
@@ -28,6 +29,7 @@ import type { AIMusicPersona, RecommendationResult, MusicFact, AgentMeta } from 
 
 import {
   api,
+  ApiError,
   type TimeFilterInput,
   MOCK_SUMMARY,
   MOCK_TOP_TRACKS,
@@ -40,6 +42,7 @@ import {
   MOCK_PERSONA,
   MOCK_LISTENING_HISTORY,
   MOCK_MUSIC_FACTS,
+  buildMockRecommendations,
   getDynamicMockCalendarPeriods,
 } from './services/api';
 
@@ -55,6 +58,7 @@ import { GenreDistribution } from './components/charts/GenreDistribution';
 import { WeeklyComparisonChart } from './components/charts/WeeklyComparisonChart';
 
 import { PersonaCard } from './components/cards/PersonaCard';
+import { isValidPersona } from './types/ai';
 import { MusicFactsSection } from './components/analytics/MusicFactsSection';
 import { CodebaseAssistantSection } from './components/analytics/CodebaseAssistantSection';
 import { TopTracksList } from './components/cards/TopTracksList';
@@ -64,10 +68,58 @@ import { RecentScrobblesList } from './components/cards/RecentScrobblesList';
 import { RecommendationModal } from './components/cards/RecommendationModal';
 import { ShareableCard } from './components/cards/ShareableCard';
 
+const EMPTY_SUMMARY: SummaryStats = {
+  total_plays: 0,
+  total_duration_ms: 0,
+  total_hours: 0,
+  unique_artists_count: 0,
+  unique_albums_count: 0,
+  time_range: 'week',
+};
+
+const EMPTY_RADAR: RadarData = {
+  time_range: 'week',
+  total_tracks_analyzed: 0,
+  features: [],
+};
+
+const EMPTY_HEATMAP: HeatmapData = {
+  time_range: 'week',
+  period_type: 'week',
+  max_density: 0,
+  matrix: [],
+};
+
+const EMPTY_WEEKLY_COMPARISON: WeeklyComparisonData = {
+  time_range: 'week',
+  period_type: 'week',
+  granularity: 'day',
+  current_week_label: '',
+  previous_week_label: '',
+  days: [],
+  summary: {
+    total_current: 0,
+    total_previous: 0,
+    total_current_week: 0,
+    total_previous_week: 0,
+    growth_percentage: 0,
+    baseline_status: 'empty',
+    peak_day_current: '',
+    peak_plays_current: 0,
+  },
+};
+
+const EMPTY_GENRES: GenreDistributionData = {
+  genres: [],
+  total_plays: 0,
+  top_genre: 'Chưa có dữ liệu',
+};
+
 export function App() {
   // Authentication & Mode State
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [authCheckError, setAuthCheckError] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const hasInitializedRef = useRef(false);
@@ -138,25 +190,26 @@ export function App() {
     }
   };
 
-  // Analytics Data State
-  const [summary, setSummary] = useState<SummaryStats>(MOCK_SUMMARY);
-  const [topTracks, setTopTracks] = useState<TopTrack[]>(MOCK_TOP_TRACKS);
-  const [topArtists, setTopArtists] = useState<TopArtist[]>(MOCK_TOP_ARTISTS);
-  const [topAlbums, setTopAlbums] = useState<TopAlbum[]>(MOCK_TOP_ALBUMS);
-  const [radarData, setRadarData] = useState<RadarData>(MOCK_RADAR);
-  const [heatmapData, setHeatmapData] = useState<HeatmapData>(MOCK_HEATMAP);
-  const [weeklyComparison, setWeeklyComparison] = useState<WeeklyComparisonData>(MOCK_WEEKLY_COMPARISON);
-  const [genreData, setGenreData] = useState<GenreDistributionData>(MOCK_GENRES);
-  const [recentScrobbles, setRecentScrobbles] = useState<ListeningHistoryRecord[]>(MOCK_LISTENING_HISTORY);
+  // Analytics Data State (mac dinh rong cho toi khi nap du lieu that hoac bat Demo Mode)
+  const [summary, setSummary] = useState<SummaryStats>(EMPTY_SUMMARY);
+  const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
+  const [topArtists, setTopArtists] = useState<TopArtist[]>([]);
+  const [topAlbums, setTopAlbums] = useState<TopAlbum[]>([]);
+  const [radarData, setRadarData] = useState<RadarData>(EMPTY_RADAR);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData>(EMPTY_HEATMAP);
+  const [weeklyComparison, setWeeklyComparison] = useState<WeeklyComparisonData>(EMPTY_WEEKLY_COMPARISON);
+  const [genreData, setGenreData] = useState<GenreDistributionData>(EMPTY_GENRES);
+  const [recentScrobbles, setRecentScrobbles] = useState<ListeningHistoryRecord[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   // AI Persona & Recommendations State
-  const [persona, setPersona] = useState<AIMusicPersona>(MOCK_PERSONA);
+  const [persona, setPersona] = useState<AIMusicPersona | null>(null);
   const [isGeneratingPersona, setIsGeneratingPersona] = useState(false);
 
   // Music Facts Detective Agent State
-  const [musicFacts, setMusicFacts] = useState<MusicFact[]>(MOCK_MUSIC_FACTS.facts);
-  const [agentMeta, setAgentMeta] = useState<AgentMeta | undefined>(MOCK_MUSIC_FACTS.agent_meta);
+  const [musicFacts, setMusicFacts] = useState<MusicFact[]>([]);
+  const [agentMeta, setAgentMeta] = useState<AgentMeta | undefined>(undefined);
   const [isLoadingFacts, setIsLoadingFacts] = useState(false);
 
   // Modals & Action States
@@ -193,66 +246,122 @@ export function App() {
       }
       return;
     }
-    try {
-      let timeFilter: TimeFilterInput = '30d';
-      if (period) {
-        if (periodType === 'month' && period.start_date && period.end_date) {
-          const s = new Date(period.start_date);
-          const e = new Date(period.end_date);
-          const diffDays = Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24));
-          if (diffDays > 32) {
-            const y = e.getFullYear();
-            const m = (e.getMonth() + 1).toString().padStart(2, '0');
-            const lastD = new Date(y, e.getMonth() + 1, 0).getDate().toString().padStart(2, '0');
-            timeFilter = { start_date: `${y}-${m}-01`, end_date: `${y}-${m}-${lastD}` };
-          } else {
-            timeFilter = { start_date: period.start_date, end_date: period.end_date };
-          }
+
+    setAnalyticsError(null);
+
+    let timeFilter: TimeFilterInput = '30d';
+    if (period) {
+      if (periodType === 'month' && period.start_date && period.end_date) {
+        const s = new Date(period.start_date);
+        const e = new Date(period.end_date);
+        const diffDays = Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24));
+        if (diffDays > 32) {
+          const y = e.getFullYear();
+          const m = (e.getMonth() + 1).toString().padStart(2, '0');
+          const lastD = new Date(y, e.getMonth() + 1, 0).getDate().toString().padStart(2, '0');
+          timeFilter = { start_date: `${y}-${m}-01`, end_date: `${y}-${m}-${lastD}` };
         } else {
           timeFilter = { start_date: period.start_date, end_date: period.end_date };
         }
+      } else {
+        timeFilter = { start_date: period.start_date, end_date: period.end_date };
       }
-
-      const [sum, tracks, artists, albums, radar, heatmap, weeklyComp, genres, p, history, factsRes] = await Promise.all([
-        api.getSummary(timeFilter),
-        api.getTopTracks(timeFilter, 5),
-        api.getTopArtists(timeFilter, 5),
-        api.getTopAlbums(timeFilter, 5),
-        api.getRadar(timeFilter),
-        api.getHeatmap(timeFilter, periodType),
-        api.getWeeklyComparison(timeFilter),
-        api.getGenreDistribution(timeFilter),
-        api.getLatestPersona('monthly'),
-        api.getListeningHistory(20),
-        api.getMusicFacts(period?.key || 'week', false, false),
-      ]);
-
-      setSummary(sum);
-      setTopTracks(tracks);
-      setTopArtists(artists);
-      setTopAlbums(albums);
-      setRadarData(radar);
-      setHeatmapData(heatmap);
-      setWeeklyComparison(weeklyComp);
-      setGenreData(genres);
-      if (p) setPersona(p);
-      setRecentScrobbles(history);
-      if (factsRes && Array.isArray(factsRes.facts)) {
-        setMusicFacts(factsRes.facts);
-        setAgentMeta(factsRes.agent_meta);
-      }
-    } catch {
-      // Graceful fallback da xu ly trong api client
     }
-  }, [user, isDemoMode, periodType]);
 
-  // 2. Kiem tra OAuth Callback & Token khi ung dung khoi tao
+    const results = await Promise.allSettled([
+      api.getSummary(timeFilter),
+      api.getTopTracks(timeFilter, 5),
+      api.getTopArtists(timeFilter, 5),
+      api.getTopAlbums(timeFilter, 5),
+      api.getRadar(timeFilter),
+      api.getHeatmap(timeFilter, periodType),
+      api.getWeeklyComparison(timeFilter, periodType),
+      api.getGenreDistribution(timeFilter),
+      api.getLatestPersona('monthly'),
+      api.getListeningHistory(20),
+      api.getMusicFacts(period?.key || 'week', false, false),
+    ]);
+
+    const [
+      sumRes,
+      tracksRes,
+      artistsRes,
+      albumsRes,
+      radarRes,
+      heatmapRes,
+      compRes,
+      genresRes,
+      personaRes,
+      historyRes,
+      factsRes,
+    ] = results;
+
+    if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
+    if (tracksRes.status === 'fulfilled') setTopTracks(tracksRes.value);
+    if (artistsRes.status === 'fulfilled') setTopArtists(artistsRes.value);
+    if (albumsRes.status === 'fulfilled') setTopAlbums(albumsRes.value);
+    if (radarRes.status === 'fulfilled') setRadarData(radarRes.value);
+    if (heatmapRes.status === 'fulfilled') setHeatmapData(heatmapRes.value);
+    if (compRes.status === 'fulfilled') setWeeklyComparison(compRes.value);
+    if (genresRes.status === 'fulfilled') setGenreData(genresRes.value);
+    if (personaRes.status === 'fulfilled') {
+      setPersona(isValidPersona(personaRes.value) ? personaRes.value : null);
+    }
+    if (historyRes.status === 'fulfilled') setRecentScrobbles(historyRes.value);
+    if (factsRes.status === 'fulfilled' && factsRes.value && Array.isArray(factsRes.value.facts)) {
+      setMusicFacts(factsRes.value.facts);
+      setAgentMeta(factsRes.value.agent_meta);
+    }
+
+    const rejected = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map((r) => r.reason);
+
+    if (rejected.length > 0) {
+      const hasUnauthorized = rejected.some(
+        (reason) => reason instanceof ApiError && reason.status === 401
+      );
+      if (hasUnauthorized) {
+        localStorage.removeItem('access_token');
+        setUser(null);
+        addToast('warning', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập Spotify lại.');
+        return;
+      }
+
+      const firstMsg =
+        rejected[0] instanceof Error
+          ? rejected[0].message
+          : 'Không thể tải đầy đủ dữ liệu phân tích từ máy chủ.';
+      setAnalyticsError(firstMsg);
+    }
+  }, [user, isDemoMode, periodType, addToast]);
+
+  const checkSession = useCallback(async () => {
+    setIsCheckingAuth(true);
+    setAuthCheckError(null);
+    try {
+      const currentUser = await api.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        setIsDemoMode(false);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ xác thực.';
+      setAuthCheckError(msg);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  }, []);
+
+  // 2. Kiem tra OAuth Callback (one-time exchange_code) & Token khi ung dung khoi tao
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
+    const exchangeCode = params.get('exchange_code');
     const authSuccess = params.get('auth_success');
     const authError = params.get('auth_error');
 
@@ -261,10 +370,29 @@ export function App() {
       setTimeout(() => {
         addToast('error', decodeURIComponent(authError));
       }, 0);
-    } else if (token) {
-      localStorage.setItem('access_token', token);
+    }
+
+    if (exchangeCode) {
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (authSuccess) {
+      api.exchangeSpotifyCode(exchangeCode)
+        .then((res) => {
+          localStorage.setItem('access_token', res.token);
+          setUser(res.user);
+          setIsDemoMode(false);
+          setAuthCheckError(null);
+          addToast('success', 'Đăng nhập Spotify thành công! Đang tải hồ sơ của bạn...');
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : 'Trao đổi phiên đăng nhập thất bại.';
+          addToast('error', msg);
+        })
+        .finally(() => {
+          setIsCheckingAuth(false);
+        });
+      return;
+    }
+
+    if (authSuccess) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -274,13 +402,14 @@ export function App() {
         if (currentUser) {
           setUser(currentUser);
           setIsDemoMode(false);
-          if (token || authSuccess) {
+          if (authSuccess) {
             addToast('success', 'Đăng nhập Spotify thành công! Đang tải hồ sơ của bạn...');
           }
         }
       })
-      .catch(() => {
-        setUser(null);
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Không thể xác minh phiên làm việc.';
+        setAuthCheckError(msg);
       })
       .finally(() => {
         setIsCheckingAuth(false);
@@ -293,6 +422,14 @@ export function App() {
     let isCancelled = false;
 
     const fetchPeriods = async () => {
+      if (isDemoMode && !user) {
+        const dynamicMocks = getDynamicMockCalendarPeriods();
+        const mockPeriods = dynamicMocks[periodType] || [];
+        setAvailablePeriods(mockPeriods);
+        setSelectedPeriod(mockPeriods.find((p) => p.is_current) || mockPeriods[0] || null);
+        return;
+      }
+
       setIsLoadingPeriods(true);
       try {
         const periods = await api.getAvailablePeriods(periodType, 12);
@@ -315,6 +452,11 @@ export function App() {
             const current = periods.find((p) => p.is_current);
             return current || periods[0];
           });
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          const msg = err instanceof Error ? err.message : 'Không thể tải danh sách kỳ thống kê.';
+          setAnalyticsError(msg);
         }
       } finally {
         if (!isCancelled) {
@@ -402,8 +544,9 @@ export function App() {
       } else {
         addToast('error', 'Không thể khởi tạo đường dẫn đăng nhập Spotify. Vui lòng kiểm tra Backend.');
       }
-    } catch {
-      addToast('error', 'Lỗi kết nối máy chủ xác thực.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ xác thực.';
+      addToast('error', msg);
     } finally {
       setIsLoggingIn(false);
     }
@@ -421,6 +564,7 @@ export function App() {
 
   const handleEnterDemo = () => {
     setIsDemoMode(true);
+    setAnalyticsError(null);
     localStorage.setItem('user_calendar_selected_mode', 'current');
     localStorage.removeItem('user_calendar_selected_key');
     const dynamicMocks = getDynamicMockCalendarPeriods();
@@ -435,6 +579,7 @@ export function App() {
     setHeatmapData(MOCK_HEATMAP);
     setWeeklyComparison(MOCK_WEEKLY_COMPARISON);
     setGenreData(MOCK_GENRES);
+    setRecentScrobbles(MOCK_LISTENING_HISTORY);
     setPersona(MOCK_PERSONA);
     setMusicFacts(MOCK_MUSIC_FACTS.facts);
     setAgentMeta(MOCK_MUSIC_FACTS.agent_meta);
@@ -443,6 +588,18 @@ export function App() {
 
   const handleExitDemo = () => {
     setIsDemoMode(false);
+    setSummary(EMPTY_SUMMARY);
+    setTopTracks([]);
+    setTopArtists([]);
+    setTopAlbums([]);
+    setRadarData(EMPTY_RADAR);
+    setHeatmapData(EMPTY_HEATMAP);
+    setWeeklyComparison(EMPTY_WEEKLY_COMPARISON);
+    setGenreData(EMPTY_GENRES);
+    setRecentScrobbles([]);
+    setPersona(null);
+    setMusicFacts([]);
+    setAgentMeta(undefined);
   };
 
   const handleSync = async () => {
@@ -556,11 +713,19 @@ export function App() {
   const handleFindSimilarSongs = async (trackId: string) => {
     setIsRecModalOpen(true);
     setIsLoadingRecs(true);
+    setRecData(null);
+    if (isDemoMode && !user) {
+      setRecData(buildMockRecommendations(trackId));
+      setIsLoadingRecs(false);
+      return;
+    }
     try {
       const res = await api.getRecommendations(trackId, 5);
       setRecData(res);
-    } catch {
-      addToast('error', 'Không thể tìm bài hát tương tự.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Không thể tìm bài hát tương tự.';
+      addToast('error', msg);
+      setIsRecModalOpen(false);
     } finally {
       setIsLoadingRecs(false);
     }
@@ -584,6 +749,30 @@ export function App() {
         <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4">
           <div className="w-10 h-10 border-2 border-[#1DB954] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-slate-400 font-medium">Đang kiểm tra phiên làm việc...</p>
+        </div>
+      ) : authCheckError && !user && !isDemoMode ? (
+        <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="max-w-md space-y-1.5">
+            <h2 className="text-lg font-bold text-white">Không thể kết nối máy chủ xác thực</h2>
+            <p className="text-xs sm:text-sm text-slate-400">{authCheckError}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={checkSession}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1DB954] text-black hover:bg-[#1ED760] transition-all cursor-pointer"
+            >
+              Thử lại
+            </button>
+            <button
+              onClick={handleEnterDemo}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#131B2E] border border-[#1E293B] text-slate-300 hover:text-white transition-all cursor-pointer"
+            >
+              Xem thử Demo
+            </button>
+          </div>
         </div>
       ) : !user && !isDemoMode ? (
         /* Màn hình Chào mừng & Đăng nhập khi chưa xác thực */
@@ -642,6 +831,31 @@ export function App() {
             />
           </div>
 
+          {analyticsError && user && (
+            <div className="p-4 rounded-2xl bg-rose-950/35 border border-rose-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs sm:text-sm font-bold text-rose-200">
+                    Không thể tải đầy đủ dữ liệu thống kê từ máy chủ
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-rose-300/80">
+                    {analyticsError}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => refreshAllData(selectedPeriod)}
+                className="shrink-0 inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Thử lại</span>
+              </button>
+            </div>
+          )}
+
           {/* 1. Quick Stats Overview Grid */}
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             <StatCard
@@ -651,9 +865,9 @@ export function App() {
               icon={<Headphones className="w-5 h-5" />}
             />
             <StatCard
-              title="Thời Lượng Thưởng Thức"
+              title="Thời Lượng Nghe Ước Tính"
               value={`${summary.total_hours} giờ`}
-              subtitle="Thời gian phát trực tiếp"
+              subtitle="Tổng thời lượng các bài đã phát"
               icon={<Clock className="w-5 h-5" />}
             />
             <StatCard
@@ -725,13 +939,17 @@ export function App() {
 
               {/* 2.2 Codebase & System Architecture Intelligence RAG Section */}
               <section>
-                <CodebaseAssistantSection onAddToast={addToast} />
+                <CodebaseAssistantSection onAddToast={addToast} isAdmin={Boolean(user?.is_staff)} />
               </section>
 
               {/* 3. Deep Visual Analytics: Radar & 24x7 Heatmap */}
               <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 flex">
-                  <RadarChartComponent data={radarData.features} />
+                  <RadarChartComponent
+                    data={radarData.features}
+                    totalTracksAnalyzed={radarData.total_tracks_analyzed}
+                    provenance={radarData.provenance}
+                  />
                 </div>
                 <div className="lg:col-span-7 flex">
                   <ListeningHeatmap
@@ -756,9 +974,9 @@ export function App() {
                 <TopAlbumsList albums={topAlbums} />
               </section>
 
-              {/* 7. Biểu Đồ Cột So Sánh Lượt Nghe Theo Tuần */}
+              {/* 7. Biểu Đồ So Sánh Xu Hướng Nghe Nhạc Thích Ứng */}
               <section>
-                <WeeklyComparisonChart data={weeklyComparison} />
+                <WeeklyComparisonChart data={weeklyComparison} periodType={periodType} />
               </section>
             </>
           )}
@@ -791,8 +1009,8 @@ export function App() {
       <ShareableCard
         userName={user?.display_name || user?.username || 'Thính giả Demo'}
         avatarUrl={user?.profile_image_url || undefined}
-        personaTitle={persona.persona_title}
-        tagline={persona.tagline}
+        personaTitle={persona?.persona_title || 'Người Khám Phá Âm Nhạc'}
+        tagline={persona?.tagline || 'Âm nhạc phản chiếu tâm hồn và nhịp sống của riêng bạn.'}
         topArtists={topArtists.map((a) => a.name)}
         topGenres={genreData.genres.map((g) => g.name)}
         period={selectedPeriod ? selectedPeriod.label : 'Kỳ thống kê'}

@@ -41,12 +41,26 @@ class Track(models.Model):
     artists = models.ManyToManyField(Artist, related_name='tracks')
 
     # Audio Features phuc vu Radar Chart & KNN Recommender
+    FEATURES_SOURCE_CHOICES = [
+        ('spotify', 'Spotify API'),
+        ('dsp_preview', 'Audio DSP Preview'),
+        ('estimated', 'Heuristic Estimate'),
+        ('legacy_unknown', 'Legacy Synced'),
+        ('unavailable', 'Unavailable'),
+    ]
+
     danceability = models.FloatField(default=0.0)
     energy = models.FloatField(default=0.0)
     valence = models.FloatField(default=0.0)
     acousticness = models.FloatField(default=0.0)
     tempo = models.FloatField(default=0.0)
     features_synced = models.BooleanField(default=False)
+    features_source = models.CharField(
+        max_length=24,
+        choices=FEATURES_SOURCE_CHOICES,
+        default='unavailable',
+        db_index=True,
+    )
 
     class Meta:
         db_table = 'tracker_track'

@@ -227,7 +227,8 @@ def enrich_track_with_dsp_and_artwork(track: Track, sync_artist_image: bool = Tr
             track.acousticness = dsp_res["acousticness"]
             track.tempo = dsp_res["bpm"]
             track.features_synced = True
-            track.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced"])
+            track.features_source = "dsp_preview"
+            track.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced", "features_source"])
             return True
         except Exception as e:
             logger.warning(f"Loi phan tich DSP cho track '{track.name}': {e}. Su dung fallback phỏng đoán.")
@@ -241,7 +242,8 @@ def enrich_track_with_dsp_and_artwork(track: Track, sync_artist_image: bool = Tr
     track.acousticness = estimated["acousticness"]
     track.tempo = estimated["tempo"]
     track.features_synced = True
-    track.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced"])
+    track.features_source = "estimated"
+    track.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced", "features_source"])
     return False
 
 def discover_track_assets_safe(title: str, artist_name: str) -> dict | None:

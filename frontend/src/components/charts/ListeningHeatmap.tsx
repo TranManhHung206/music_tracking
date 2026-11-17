@@ -324,8 +324,10 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
         </div>
       )}
 
-      {/* RENDER CHE DO TUAN (DEFAULT) */}
-      {(periodType === 'week' || (!monthCalendar && !yearCalendar)) && (
+      {/* RENDER CHE DO TUAN (DEFAULT HOAC FALLBACK KHI THIEU DU LIEU LICH THANG/NAM) */}
+      {(periodType === 'week' ||
+        (periodType === 'month' && !monthCalendar) ||
+        (periodType === 'year' && !yearCalendar)) && (
         <div className="overflow-x-auto pb-2">
           <div className="min-w-[620px]">
             {/* Hours Header */}

@@ -5,6 +5,7 @@ Management command de nang cap toan bo cac bai hat hien co trong Database len du
 import sys
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
+from django.db.models import Q
 from tracker.models import Track
 from tracker.services.audio_dsp import enrich_track_with_dsp_and_artwork
 from analytics.services.caching import invalidate_user_analytics_cache
@@ -25,7 +26,12 @@ class Command(BaseCommand):
         parser.add_argument(
             '--force',
             action='store_true',
-            help='Buoc phan tich lai toan bo ca nhung bai da sync cu.',
+            help='Buoc phan tich lai toan bo ca nhung bai da co nguon DSP/Spotify.',
+        )
+        parser.add_argument(
+            '--only-missing',
+            action='store_true',
+            help='Chi phan tich nhung bai chua tung dong bo audio features.',
         )
 
     def handle(self, *args, **options):
@@ -35,7 +41,14 @@ class Command(BaseCommand):
         except Exception:
             pass
 
-        tracks_qs = Track.objects.all()
+        if options.get('force'):
+            tracks_qs = Track.objects.all()
+        elif options.get('only_missing'):
+            tracks_qs = Track.objects.filter(Q(features_synced=False) | Q(features_source='unavailable'))
+        else:
+            tracks_qs = Track.objects.filter(
+                Q(features_synced=False) | Q(features_source__in=['legacy_unknown', 'unavailable', 'estimated'])
+            )
         total_tracks = tracks_qs.count()
 
         self.stdout.write(f"Bat dau nang cap {total_tracks} bai hat trong Database...")

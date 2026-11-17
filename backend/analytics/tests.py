@@ -427,3 +427,207 @@ class ArtistCSVClassificationTests(APITestCase):
         self.assertIn("Tong so nghe si", output)
         self.assertIn("Hoan tat dong bo", output)
 
+
+class Phase1AnalyticsCorrectnessTests(APITestCase):
+    """Kiem thu Phase 1 cho timezone localdate, Adaptive Comparison, Radar 0.0 + provenance, CSV read-only va per-user cache."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from django.core.cache import cache
+        cache.clear()
+        self.user = User.objects.create_user(username="p1_ana_user1", password="pw")
+        self.user2 = User.objects.create_user(username="p1_ana_user2", password="pw")
+
+    def tearDown(self):
+        from django.utils import timezone
+        timezone.deactivate()
+
+    def test_timezone_localdate_bounds(self):
+        from unittest.mock import patch
+        from datetime import datetime, timezone as dt_tz
+        from zoneinfo import ZoneInfo
+        from django.utils import timezone
+        from analytics.services.filters import get_calendar_periods, get_time_range_bounds
+
+        # 2026-10-04 20:00Z = 2026-10-05 03:00 (+07, Thu Hai) va 2026-10-04 16:00 (-04, Chu Nhat)
+        fixed_utc_now = datetime(2026, 10, 4, 20, 0, 0, tzinfo=dt_tz.utc)
+
+        with patch("analytics.services.filters.timezone.now", return_value=fixed_utc_now):
+            timezone.activate(ZoneInfo("Asia/Ho_Chi_Minh"))
+            s_vn, e_vn, key_vn = get_time_range_bounds("7d")
+            periods_vn = get_calendar_periods(self.user, "week", limit=4)
+            self.assertEqual(key_vn, "7d")
+            self.assertEqual(timezone.localdate(e_vn).isoformat(), "2026-10-05")
+            self.assertEqual(periods_vn[0]["start_date"], "2026-10-05")
+
+            timezone.activate(ZoneInfo("America/New_York"))
+            s_ny, e_ny, key_ny = get_time_range_bounds("7d")
+            periods_ny = get_calendar_periods(self.user, "week", limit=4)
+            self.assertEqual(key_ny, "7d")
+            self.assertEqual(timezone.localdate(e_ny).isoformat(), "2026-10-04")
+            self.assertEqual(periods_ny[0]["start_date"], "2026-09-28")
+
+    def test_adaptive_weekly_monthly_yearly_comparison_and_zero_baseline(self):
+        from datetime import datetime, timezone as dt_tz
+        from analytics.services.calculations import get_weekly_comparison
+
+        art = Artist.objects.create(spotify_id="cmp_art", name="Compare Artist")
+        tr = Track.objects.create(spotify_id="cmp_tr", name="Compare Track", duration_ms=180000)
+        tr.artists.add(art)
+
+        # Chi tao lich su o ky hien tai (thang 10/2026), ky truoc (thang 09/2026) = 0 -> new_activity
+        ListeningHistory.objects.create(
+            user=self.user,
+            track=tr,
+            played_at=datetime(2026, 10, 5, 10, 0, tzinfo=dt_tz.utc),
+        )
+        ListeningHistory.objects.create(
+            user=self.user,
+            track=tr,
+            played_at=datetime(2026, 10, 20, 10, 0, tzinfo=dt_tz.utc),
+        )
+
+        # Week mode
+        w_res = get_weekly_comparison(
+            self.user,
+            datetime(2026, 10, 5, 0, 0, tzinfo=dt_tz.utc),
+            datetime(2026, 10, 11, 23, 59, 59, tzinfo=dt_tz.utc),
+            period_type="week",
+        )
+        self.assertEqual(w_res["period_type"], "week")
+        self.assertEqual(w_res["granularity"], "day")
+        self.assertEqual(len(w_res["series"]), 7)
+        self.assertEqual(w_res["summary"]["baseline_status"], "new_activity")
+        self.assertIsNone(w_res["summary"]["growth_percentage"])
+
+        # Month mode (historical month Oct 2026 -> 5 buckets)
+        m_res = get_weekly_comparison(
+            self.user,
+            datetime(2026, 10, 1, 0, 0, tzinfo=dt_tz.utc),
+            datetime(2026, 10, 31, 23, 59, 59, tzinfo=dt_tz.utc),
+            period_type="month",
+        )
+        self.assertEqual(m_res["period_type"], "month")
+        self.assertEqual(m_res["granularity"], "week_of_month")
+        self.assertEqual(len(m_res["series"]), 5)
+        self.assertEqual(m_res["summary"]["total_current"], 2)
+        self.assertEqual(m_res["summary"]["total_previous"], 0)
+        self.assertEqual(m_res["summary"]["baseline_status"], "new_activity")
+        self.assertIsNone(m_res["summary"]["growth_percentage"])
+
+        # Add baseline in Sep 2026 -> normal growth
+        ListeningHistory.objects.create(
+            user=self.user,
+            track=tr,
+            played_at=datetime(2026, 9, 10, 10, 0, tzinfo=dt_tz.utc),
+        )
+        m_res_normal = get_weekly_comparison(
+            self.user,
+            datetime(2026, 10, 1, 0, 0, tzinfo=dt_tz.utc),
+            datetime(2026, 10, 31, 23, 59, 59, tzinfo=dt_tz.utc),
+            period_type="month",
+        )
+        self.assertEqual(m_res_normal["summary"]["baseline_status"], "normal")
+        self.assertEqual(m_res_normal["summary"]["growth_percentage"], 100.0)
+
+        # Year mode -> 12 months
+        y_res = get_weekly_comparison(
+            self.user,
+            datetime(2026, 1, 1, 0, 0, tzinfo=dt_tz.utc),
+            datetime(2026, 12, 31, 23, 59, 59, tzinfo=dt_tz.utc),
+            period_type="year",
+        )
+        self.assertEqual(y_res["period_type"], "year")
+        self.assertEqual(y_res["granularity"], "month")
+        self.assertEqual(len(y_res["series"]), 12)
+        self.assertEqual(y_res["summary"]["total_current"], 3)
+
+    def test_radar_preserves_zero_values_and_reports_provenance(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from analytics.services.calculations import get_radar_features
+
+        tr_sp = Track.objects.create(
+            spotify_id="rad_zero_tr",
+            name="Zero Valence Ambient",
+            duration_ms=200000,
+            valence=0.0,
+            energy=0.0,
+            danceability=0.0,
+            acousticness=1.0,
+            tempo=80.0,
+            features_synced=True,
+            features_source="spotify",
+        )
+        tr_dsp = Track.objects.create(
+            spotify_id="rad_dsp_tr",
+            name="DSP Preview Track",
+            duration_ms=200000,
+            valence=0.8,
+            energy=0.8,
+            danceability=0.8,
+            acousticness=0.2,
+            tempo=120.0,
+            features_synced=True,
+            features_source="dsp_preview",
+        )
+        now = timezone.now()
+        ListeningHistory.objects.create(user=self.user, track=tr_sp, played_at=now - timedelta(minutes=2))
+        ListeningHistory.objects.create(user=self.user, track=tr_dsp, played_at=now - timedelta(minutes=1))
+
+        res = get_radar_features(self.user, now - timedelta(days=7), now + timedelta(days=1))
+        attrs = {item["attribute"]: item["score"] for item in res["features"]}
+        self.assertEqual(attrs["valence"], 0.4)
+        self.assertEqual(attrs["energy"], 0.4)
+        self.assertEqual(attrs["danceability"], 0.4)
+        self.assertEqual(res["provenance"]["total_plays"], 2)
+        self.assertEqual(res["provenance"]["spotify"], 1)
+        self.assertEqual(res["provenance"]["dsp_preview"], 1)
+
+    def test_genre_distribution_does_not_mutate_csv_on_read(self):
+        from datetime import timedelta
+        from pathlib import Path
+        from django.utils import timezone
+        from analytics.services.calculations import get_genre_distribution
+
+        csv_path = Path(__file__).resolve().parent / "data" / "vietnamese_artist.csv"
+        before_bytes = csv_path.read_bytes()
+
+        unknown_art = Artist.objects.create(
+            spotify_id="readonly_csv_art_999",
+            name="Readonly Unknown Artist XYZ 999",
+            genres=[],
+        )
+        tr = Track.objects.create(spotify_id="readonly_csv_tr_999", name="Unknown Track", duration_ms=150000)
+        tr.artists.add(unknown_art)
+        now = timezone.now()
+        ListeningHistory.objects.create(user=self.user, track=tr, played_at=now)
+
+        genres = get_genre_distribution(self.user, now - timedelta(days=7), now + timedelta(days=1))
+        self.assertIsInstance(genres, dict)
+        after_bytes = csv_path.read_bytes()
+        self.assertEqual(before_bytes, after_bytes)
+
+    def test_invalidate_user_cache_isolates_other_users_and_namespaces(self):
+        from django.core.cache import cache
+        from analytics.services.caching import (
+            build_analytics_cache_key,
+            invalidate_user_analytics_cache,
+        )
+
+        key_u1 = build_analytics_cache_key(self.user.id, "summary", "week")
+        key_u2 = build_analytics_cache_key(self.user2.id, "summary", "week")
+        rag_key = "rag_query:preserved_key"
+
+        cache.set(key_u1, {"total": 10}, 300)
+        cache.set(key_u2, {"total": 20}, 300)
+        cache.set(rag_key, {"answer": "still_here"}, 300)
+
+        invalidate_user_analytics_cache(self.user.id)
+
+        new_key_u1 = build_analytics_cache_key(self.user.id, "summary", "week")
+        self.assertNotEqual(key_u1, new_key_u1)
+        self.assertIsNone(cache.get(new_key_u1))
+        self.assertEqual(cache.get(key_u2), {"total": 20})
+        self.assertEqual(cache.get(rag_key), {"answer": "still_here"})
+

@@ -499,4 +499,56 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         self.assertGreater(len(all_returned_categories), 1)
 
 
+from django.test import TestCase as DjangoTestCase
+
+
+class Phase1FactsSecurityAndTimezoneTests(DjangoTestCase):
+    """Kiem thu loai bo search_codebase khoi facts_agent va localdate cho parse_period_to_bounds."""
+
+    def tearDown(self):
+        from django.utils import timezone
+        timezone.deactivate()
+
+    def test_search_codebase_not_exposed_in_facts_agent(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from ai_engine.services.facts_agent.harness import (
+            ALLOWED_TOOLS,
+            GROQ_TOOL_DEFINITIONS,
+            execute_agent_tool,
+        )
+        from django.contrib.auth.models import User
+
+        self.assertNotIn("search_codebase", ALLOWED_TOOLS)
+        tool_names = [t["function"]["name"] for t in GROQ_TOOL_DEFINITIONS]
+        self.assertNotIn("search_codebase", tool_names)
+
+        user = User.objects.create_user(username="facts_sec_user", password="pw")
+        now = timezone.now()
+        res = execute_agent_tool("search_codebase", {"query": "settings"}, user, now - timedelta(days=7), now)
+        self.assertIn("error", res)
+
+    def test_parse_period_to_bounds_respects_localdate(self):
+        from unittest.mock import patch
+        from datetime import datetime, timezone as dt_tz
+        from zoneinfo import ZoneInfo
+        from django.utils import timezone
+        from ai_engine.services.facts_agent import parse_period_to_bounds
+
+        # 2026-10-04 20:00Z = 2026-10-05 (+07, tuan moi) vs 2026-10-04 (-04, cuoi tuan cu)
+        fixed_utc = datetime(2026, 10, 4, 20, 0, 0, tzinfo=dt_tz.utc)
+        with patch("ai_engine.services.facts_agent.timezone.now", return_value=fixed_utc):
+            timezone.activate(ZoneInfo("Asia/Ho_Chi_Minh"))
+            s_vn, e_vn, label_vn = parse_period_to_bounds("week")
+            self.assertIsNotNone(s_vn)
+            self.assertEqual(timezone.localdate(s_vn).isoformat(), "2026-10-05")
+            self.assertEqual(timezone.localdate(e_vn).isoformat(), "2026-10-11")
+            self.assertTrue(len(label_vn) > 0)
+
+            timezone.activate(ZoneInfo("America/New_York"))
+            s_ny, e_ny, _ = parse_period_to_bounds("week")
+            self.assertEqual(timezone.localdate(s_ny).isoformat(), "2026-09-28")
+            self.assertEqual(timezone.localdate(e_ny).isoformat(), "2026-10-04")
+
+
 

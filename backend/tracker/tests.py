@@ -100,7 +100,7 @@ class IngestionServiceTest(TestCase):
         result_2 = ingest_recently_played_payload(self.user, SAMPLE_SPOTIFY_PAYLOAD)
         # Database count remains 2
         self.assertEqual(ListeningHistory.objects.count(), 2)
-        self.assertEqual(result_2["scrobbled_count"], 2)
+        self.assertEqual(result_2["scrobbled_count"], 0)
 
     def test_database_unique_constraint_enforcement(self):
         track = Track.objects.create(spotify_id="trk_unique", name="Unique Track")
@@ -226,4 +226,178 @@ class AutoSyncCommandTest(TestCase):
         self.assertIn("new_tracks=5", output_str)
         self.assertIn("Da dung Auto-Sync Daemon an toan.", output_str)
         mock_sync.assert_called_once_with(self.user)
+
+
+class Phase1TrackerReliabilityTests(TestCase):
+    """Kiem thu bo sung Phase 1 cho ingestion count, features_source va enrich flags."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.user = User.objects.create_user(username="p1_tracker_user", password="pw")
+
+    def test_ingest_mixed_duplicate_and_new_counts_only_new(self):
+        payload_1 = {
+            "items": [
+                {
+                    "played_at": "2026-10-01T10:00:00Z",
+                    "track": {
+                        "id": "p1_tr_1",
+                        "name": "Track One",
+                        "duration_ms": 200000,
+                        "popularity": 70,
+                        "artists": [{"id": "p1_art_1", "name": "Artist One"}],
+                        "album": {"id": "p1_alb_1", "name": "Album One", "images": []},
+                    },
+                }
+            ]
+        }
+        payload_2 = {
+            "items": [
+                {
+                    "played_at": "2026-10-01T10:00:00+00:00",
+                    "track": payload_1["items"][0]["track"],
+                },
+                {
+                    "played_at": "2026-10-01T10:05:00Z",
+                    "track": {
+                        "id": "p1_tr_2",
+                        "name": "Track Two",
+                        "duration_ms": 210000,
+                        "popularity": 75,
+                        "artists": [{"id": "p1_art_1", "name": "Artist One"}],
+                        "album": {"id": "p1_alb_1", "name": "Album One", "images": []},
+                    },
+                },
+            ]
+        }
+        res1 = ingest_recently_played_payload(self.user, payload_1)
+        self.assertEqual(res1["scrobbled_count"], 1)
+        res2 = ingest_recently_played_payload(self.user, payload_2)
+        self.assertEqual(res2["scrobbled_count"], 1)
+        self.assertEqual(ListeningHistory.objects.filter(user=self.user).count(), 2)
+
+    def test_track_features_source_in_serializer_and_spotify_sync(self):
+        from unittest.mock import patch, MagicMock
+        from tracker.serializers import TrackSerializer
+        from tracker.services.ingestion import sync_audio_features_for_unsynced_tracks
+        from users.models import SpotifyProfile
+        from users.services.encryption import encrypt_token
+        from django.utils import timezone
+        from datetime import timedelta
+
+        art = Artist.objects.create(spotify_id="p1_fs_art", name="FS Artist")
+        tr = Track.objects.create(
+            spotify_id="p1_fs_tr",
+            name="FS Track",
+            duration_ms=180000,
+            features_synced=False,
+        )
+        tr.artists.add(art)
+
+        SpotifyProfile.objects.create(
+            user=self.user,
+            spotify_id="sp_fs_user",
+            display_name="FS User",
+            encrypted_access_token=encrypt_token("fake_access_token"),
+            encrypted_refresh_token=encrypt_token("fake_refresh_token"),
+            token_expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "audio_features": [
+                {
+                    "id": "p1_fs_tr",
+                    "danceability": 0.72,
+                    "energy": 0.81,
+                    "valence": 0.65,
+                    "acousticness": 0.12,
+                    "instrumentalness": 0.0,
+                    "liveness": 0.1,
+                    "speechiness": 0.05,
+                    "tempo": 124.0,
+                }
+            ]
+        }
+        with patch("requests.Session.get", return_value=mock_resp):
+            sync_audio_features_for_unsynced_tracks("fake_access_token")
+
+        tr.refresh_from_db()
+        self.assertTrue(tr.features_synced)
+        self.assertEqual(tr.features_source, "spotify")
+        self.assertEqual(TrackSerializer(tr).data["features_source"], "spotify")
+
+    def test_dsp_enrichment_sets_estimated_when_no_preview(self):
+        from unittest.mock import patch
+        from tracker.services.audio_dsp import enrich_track_with_dsp_and_artwork
+
+        art = Artist.objects.create(spotify_id="p1_dsp_art", name="DSP Artist")
+        tr = Track.objects.create(
+            spotify_id="p1_dsp_tr",
+            name="DSP Fallback Track",
+            duration_ms=190000,
+            features_synced=False,
+        )
+        tr.artists.add(art)
+        with patch("tracker.services.audio_dsp.discover_track_multimedia", return_value=None):
+            enrich_track_with_dsp_and_artwork(tr)
+
+        tr.refresh_from_db()
+        self.assertTrue(tr.features_synced)
+        self.assertEqual(tr.features_source, "estimated")
+
+    def test_enrich_existing_tracks_command_flags(self):
+        from io import StringIO
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        Track.objects.create(spotify_id="c_sp", name="Sp", duration_ms=1000, features_synced=True, features_source="spotify")
+        Track.objects.create(spotify_id="c_leg", name="Leg", duration_ms=1000, features_synced=True, features_source="legacy_unknown")
+        Track.objects.create(spotify_id="c_est", name="Est", duration_ms=1000, features_synced=True, features_source="estimated")
+        Track.objects.create(spotify_id="c_un", name="Un", duration_ms=1000, features_synced=False, features_source="unavailable")
+
+        with patch("tracker.management.commands.enrich_existing_tracks.enrich_track_with_dsp_and_artwork", return_value=True) as mock_enrich:
+            call_command("enrich_existing_tracks", "--only-missing", stdout=StringIO())
+            called_ids = {call.args[0].spotify_id for call in mock_enrich.call_args_list}
+            self.assertEqual(called_ids, {"c_un"})
+
+            mock_enrich.reset_mock()
+            call_command("enrich_existing_tracks", stdout=StringIO())
+            called_ids_default = {call.args[0].spotify_id for call in mock_enrich.call_args_list}
+            self.assertEqual(called_ids_default, {"c_leg", "c_est", "c_un"})
+
+            mock_enrich.reset_mock()
+            call_command("enrich_existing_tracks", "--force", stdout=StringIO())
+            called_ids_force = {call.args[0].spotify_id for call in mock_enrich.call_args_list}
+            self.assertEqual(called_ids_force, {"c_sp", "c_leg", "c_est", "c_un"})
+
+    def test_sync_pipeline_two_hour_gap_logs_without_nameerror(self):
+        from unittest.mock import patch
+        from datetime import timedelta
+        from django.utils import timezone
+        from tracker.services.ingestion import sync_user_recently_played_pipeline
+        from users.models import SpotifyProfile
+        from users.services.encryption import encrypt_token
+
+        tr = Track.objects.create(spotify_id="p1_gap_tr", name="Gap Track", duration_ms=180000, features_synced=True)
+        ListeningHistory.objects.create(
+            user=self.user,
+            track=tr,
+            played_at=timezone.now() - timedelta(hours=4),
+        )
+        SpotifyProfile.objects.create(
+            user=self.user,
+            spotify_id="sp_gap_user",
+            display_name="Gap User",
+            encrypted_access_token=encrypt_token("fake_access"),
+            encrypted_refresh_token=encrypt_token("fake_refresh"),
+            token_expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+        with patch("tracker.services.ingestion.fetch_recently_played_from_api", return_value={"items": []}), \
+             patch("tracker.services.ingestion.sync_audio_features_for_unsynced_tracks", return_value=0):
+            res = sync_user_recently_played_pipeline(self.user)
+
+        self.assertEqual(res["scrobbled_count"], 0)
 
