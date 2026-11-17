@@ -10,6 +10,7 @@ class SpotifyProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     profile_image_url = serializers.CharField(source='avatar_url', read_only=True, allow_null=True)
     is_spotify_connected = serializers.SerializerMethodField()
+    is_staff = serializers.BooleanField(source='user.is_staff', read_only=True)
 
     def get_is_spotify_connected(self, obj):
         return bool(obj.spotify_id and obj.encrypted_access_token)
@@ -27,6 +28,7 @@ class SpotifyProfileSerializer(serializers.ModelSerializer):
             'country',
             'is_spotify_connected',
             'is_sync_active',
+            'is_staff',
             'last_synced_at',
             'created_at',
         ]

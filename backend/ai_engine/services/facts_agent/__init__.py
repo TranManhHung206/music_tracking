@@ -22,7 +22,7 @@ def parse_period_to_bounds(period_key: str = 'week') -> tuple[datetime, datetime
     - week, month, year, 7d, 30d
     """
     now = timezone.now()
-    today = now.date()
+    today = timezone.localdate(now)
     p_str = (period_key or 'week').strip()
 
     # 1. Kiem tra ISO Week: YYYY-Www

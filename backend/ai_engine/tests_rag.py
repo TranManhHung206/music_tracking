@@ -226,15 +226,38 @@ class CodebaseRAGAPITestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_query_endpoint_authenticated(self):
+        from unittest.mock import patch
+        from ai_engine.services.rag.service import CodebaseRAGService
+
         payload = {
             "query": "Cơ chế mã hóa token Fernet hoạt động thế nào?",
             "mode": "full_cascade",
             "top_k": 3,
             "use_cache": False,
         }
-        response = self.client.post("/api/ai/codebase/query/", payload, format="json")
+        with patch.object(
+            CodebaseRAGService,
+            "_generate_answer",
+            return_value="Fernet ma hoa token bang AES-128-CBC + HMAC [C1].",
+        ):
+            response = self.client.post("/api/ai/codebase/query/", payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("answer", response.data)
         self.assertIn("citations", response.data)
         self.assertIn("verification", response.data)
         self.assertIn("latency_ms", response.data)
+
+    def test_index_endpoint_requires_admin(self):
+        from unittest.mock import patch
+        from ai_engine.services.rag.service import CodebaseRAGService
+
+        resp_regular = self.client.post("/api/ai/codebase/index/", {}, format="json")
+        self.assertEqual(resp_regular.status_code, status.HTTP_403_FORBIDDEN)
+
+        admin_user = User.objects.create_user(
+            username="rag_admin_user", password="secure_pass_123", is_staff=True
+        )
+        self.client.force_authenticate(user=admin_user)
+        with patch.object(CodebaseRAGService, "index_codebase", return_value={"indexed_chunks": 10}):
+            resp_admin = self.client.post("/api/ai/codebase/index/", {}, format="json")
+        self.assertEqual(resp_admin.status_code, status.HTTP_200_OK)

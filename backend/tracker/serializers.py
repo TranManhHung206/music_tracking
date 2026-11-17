@@ -34,6 +34,7 @@ class TrackSerializer(serializers.ModelSerializer):
             'acousticness',
             'tempo',
             'features_synced',
+            'features_source',
         ]
 
 class ListeningHistorySerializer(serializers.ModelSerializer):

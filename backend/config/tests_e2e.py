@@ -117,7 +117,7 @@ class EndToEndSystemIntegrationTests(APITestCase):
 
         # Lan 2: Ingest lai cung payload -> Database khong bi tang them ban ghi
         result_2 = ingest_recently_played_payload(self.user, mock_payload)
-        self.assertIn(result_2["scrobbled_count"], [0, 2])
+        self.assertEqual(result_2["scrobbled_count"], 0)
         self.assertEqual(ListeningHistory.objects.filter(user=self.user).count(), 2)
 
         # Gan Audio Features cho cac track de phuc vu Radar

@@ -40,10 +40,23 @@ export interface AudioFeatureItem {
   description?: string;
 }
 
+export interface FeaturesProvenance {
+  spotify: number;
+  dsp_preview: number;
+  estimated: number;
+  legacy_unknown: number;
+  unavailable: number;
+  total_plays: number;
+  measured_percentage: number;
+  has_estimates: boolean;
+  has_legacy_unknown: boolean;
+}
+
 export interface RadarData {
   time_range: string;
   total_tracks_analyzed: number;
   features: AudioFeatureItem[];
+  provenance?: FeaturesProvenance;
 }
 
 export interface HeatmapCell {
@@ -140,18 +153,38 @@ export interface DayComparison {
   diff: number;
 }
 
+export interface ComparisonSeriesPoint {
+  index: number;
+  label: string;
+  short_label: string;
+  full_label: string;
+  current_plays: number;
+  previous_plays: number;
+  diff: number;
+}
+
 export interface WeeklyComparisonSummary {
+  total_current?: number;
+  total_previous?: number;
   total_current_week: number;
   total_previous_week: number;
-  growth_percentage: number;
+  growth_percentage: number | null;
+  baseline_status?: 'normal' | 'new_activity' | 'empty';
+  peak_label?: string;
+  peak_plays?: number;
   peak_day_current: string;
   peak_plays_current: number;
 }
 
 export interface WeeklyComparisonData {
   time_range: string;
+  period_type?: CalendarPeriodType;
+  granularity?: 'day' | 'week_of_month' | 'month';
+  current_label?: string;
+  previous_label?: string;
   current_week_label: string;
   previous_week_label: string;
+  series?: ComparisonSeriesPoint[];
   days: DayComparison[];
   summary: WeeklyComparisonSummary;
 }

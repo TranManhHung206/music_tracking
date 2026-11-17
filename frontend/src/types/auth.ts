@@ -6,10 +6,16 @@ export interface UserProfile {
   profile_image_url: string | null;
   is_spotify_connected: boolean;
   is_sync_active: boolean;
+  is_staff?: boolean;
   last_synced_at: string | null;
 }
 
 export interface SpotifyAuthResponse {
   access_token: string;
+  user: UserProfile;
+}
+
+export interface SpotifyExchangeResponse {
+  token: string;
   user: UserProfile;
 }

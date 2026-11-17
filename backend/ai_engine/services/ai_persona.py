@@ -78,7 +78,8 @@ def extract_user_music_context(user, period_type: str = 'monthly') -> dict:
             "danceability": features_map.get('danceability', 0.5),
             "acousticness": features_map.get('acousticness', 0.5),
             "tempo_normalized": features_map.get('tempo_normalized', 0.5),
-        }
+        },
+        "audio_features_provenance": radar_data.get('provenance', {}),
     }
 
 from django.core.cache import cache

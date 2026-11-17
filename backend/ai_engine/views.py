@@ -8,7 +8,7 @@ API Views cho ung dung AI Engine:
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 
 from .models import AIMusicPersona
@@ -152,8 +152,8 @@ class CodebaseQueryView(APIView):
 
 
 class CodebaseIndexView(APIView):
-    """API quan tri danh chi muc (re-index) toan bo ma nguon va tai lieu."""
-    permission_classes = [IsAuthenticated]
+    """API quan tri danh chi muc (re-index) toan bo ma nguon va tai lieu (chi danh cho Admin/Staff)."""
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
         rag_service = get_rag_service()

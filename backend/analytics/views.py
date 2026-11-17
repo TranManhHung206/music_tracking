@@ -233,20 +233,27 @@ class TopAlbumsAnalyticsView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 class WeeklyComparisonAnalyticsView(APIView):
-    """API so sanh so luot nghe hang ngay cua tuan nay so voi tuan truoc."""
+    """API so sanh xu huong luot nghe thich ung theo ky (Tuan / Thang / Nam) voi ky truoc."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         time_range = request.query_params.get('time_range', '7d')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
+        period_type = request.query_params.get('period_type')
 
         start_dt, end_dt, range_key = get_time_range_bounds(time_range, start_date, end_date)
-        cache_key = build_analytics_cache_key(request.user.id, 'weekly_comparison', range_key)
+        cache_suffix = f"{range_key}_{period_type}" if period_type else range_key
+        cache_key = build_analytics_cache_key(request.user.id, 'weekly_comparison', cache_suffix)
         ttl = get_cache_ttl_for_range(range_key)
 
         def compute():
-            data = get_weekly_comparison(request.user, start_dt=start_dt, end_dt=end_dt)
+            data = get_weekly_comparison(
+                request.user,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                period_type=period_type,
+            )
             data["time_range"] = range_key
             return data
 

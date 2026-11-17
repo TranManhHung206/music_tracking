@@ -28,7 +28,7 @@ def get_time_range_bounds(time_range: str = '30d', start_date_str: str = None, e
         except Exception:
             pass
 
-    today = now.date()
+    today = timezone.localdate(now)
     if range_key == 'week':
         # Tuan hien tai: Tu 00:00 Thu 2 den 23:59 Chu Nhat
         monday = today - timedelta(days=today.weekday())
@@ -72,7 +72,7 @@ def get_cache_ttl_for_range(range_key: str) -> int:
         if len(parts) >= 3:
             try:
                 end_date = datetime.strptime(parts[2], '%Y-%m-%d').date()
-                if end_date < timezone.now().date():
+                if end_date < timezone.localdate():
                     return 86400 * 30
             except Exception:
                 pass
@@ -93,7 +93,7 @@ def get_calendar_periods(user, period_type: str = 'week', limit: int = 12) -> li
     Moi ky kem so luot nghe thuc te cua nguoi dung.
     """
     now = timezone.now()
-    today = now.date()
+    today = timezone.localdate(now)
     p_type = (period_type or 'week').lower()
     periods = []
 

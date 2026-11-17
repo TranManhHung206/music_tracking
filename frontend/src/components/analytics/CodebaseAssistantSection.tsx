@@ -17,6 +17,7 @@ import type { CodebaseQueryResponse, CitationItem } from '../../types/ai';
 
 interface CodebaseAssistantSectionProps {
   onAddToast?: (type: 'success' | 'error' | 'info', message: string) => void;
+  isAdmin?: boolean;
 }
 
 const SAMPLE_QUERIES = [
@@ -103,6 +104,7 @@ const renderFormattedText = (
 
 export const CodebaseAssistantSection: React.FC<CodebaseAssistantSectionProps> = ({
   onAddToast,
+  isAdmin = false,
 }) => {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<'full_cascade' | 'hybrid_rrf' | 'baseline_dense'>('full_cascade');
@@ -176,15 +178,17 @@ export const CodebaseAssistantSection: React.FC<CodebaseAssistantSectionProps> =
           </p>
         </div>
 
-        <button
-          onClick={handleReindex}
-          disabled={isIndexing}
-          className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700/60 transition-all cursor-pointer disabled:opacity-50"
-          title="Nạp lại mã nguồn vào Vector Store & BM25"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isIndexing ? 'animate-spin text-[#1DB954]' : ''}`} />
-          <span>{isIndexing ? 'Đang index...' : 'Làm mới chỉ mục'}</span>
-        </button>
+        {isAdmin && (
+          <button
+            onClick={handleReindex}
+            disabled={isIndexing}
+            className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700/60 transition-all cursor-pointer disabled:opacity-50"
+            title="Nạp lại mã nguồn vào Vector Store & BM25"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isIndexing ? 'animate-spin text-[#1DB954]' : ''}`} />
+            <span>{isIndexing ? 'Đang index...' : 'Làm mới chỉ mục'}</span>
+          </button>
+        )}
       </div>
 
       {/* Search Input Box */}

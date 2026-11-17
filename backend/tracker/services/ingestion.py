@@ -3,7 +3,8 @@ Ingestion & Scrobbling Service
 Cung cap logic thu thap Recently Played tu Spotify API, deduplication 2 tang, va dong bo Audio Features.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+import logging
 import time
 import requests
 from django.utils import timezone
@@ -11,6 +12,8 @@ from django.db import transaction
 
 from users.services.spotify_auth import get_valid_access_token, get_spotify_session
 from tracker.models import Artist, Album, Track, ListeningHistory
+
+logger = logging.getLogger(__name__)
 
 SPOTIFY_RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
 SPOTIFY_AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features"
@@ -240,8 +243,20 @@ def ingest_recently_played_payload(user, payload: dict) -> dict:
                 )
             )
 
+        # Dem chinh xac so ban ghi thuc su moi truoc khi bulk_create(ignore_conflicts=True)
+        played_times = [dt for dt, _ in unique_items]
+        existing_times_utc = {
+            dt.astimezone(dt_timezone.utc)
+            for dt in ListeningHistory.objects.filter(
+                user=user, played_at__in=played_times
+            ).values_list('played_at', flat=True)
+        }
+        new_items_count = sum(
+            1 for dt, _ in unique_items if dt.astimezone(dt_timezone.utc) not in existing_times_utc
+        )
+
         # Tuan 2: Ràng buộc Database voi bulk_create ignore_conflicts=True
-        created_records = ListeningHistory.objects.bulk_create(
+        ListeningHistory.objects.bulk_create(
             history_to_create,
             ignore_conflicts=True
         )
@@ -254,7 +269,7 @@ def ingest_recently_played_payload(user, payload: dict) -> dict:
             pass
 
     return {
-        "scrobbled_count": len(created_records),
+        "scrobbled_count": new_items_count,
         "tracks_to_feature_sync": [t.spotify_id for t in tracks_to_feature_sync]
     }
 
@@ -334,7 +349,8 @@ def sync_audio_features_for_unsynced_tracks(access_token: str, limit: int = 50) 
             t.acousticness = float(feat.get("acousticness", 0.0))
             t.tempo = float(feat.get("tempo", 0.0))
             t.features_synced = True
-            t.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced"])
+            t.features_source = "spotify"
+            t.save(update_fields=["danceability", "energy", "valence", "acousticness", "tempo", "features_synced", "features_source"])
             updated_count += 1
 
     # Neu Spotify tra ve 403 hoac rong, tu dong ap dung Audio DSP trich xuat song am 30s va dong bo anh HD

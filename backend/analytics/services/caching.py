@@ -1,6 +1,7 @@
 """
 Redis & In-Memory Caching Service
-Cung cap lop cache hieu nang cao (<1.5s) va co che du phong an toan (Graceful Fallback).
+Cung cap lop cache hieu nang cao (<1.5s), co lap tung user bang cache version
+va co che du phong an toan (Graceful Fallback).
 """
 
 import logging
@@ -8,9 +9,48 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-def build_analytics_cache_key(user_id: int, metric_name: str, range_key: str) -> str:
-    """Tao cache key chuan: analytics:{user_id}:{metric_name}:{range_key}."""
-    return f"analytics:{user_id}:{metric_name}:{range_key}"
+# Danh sach cac nhom metric duoc bao phu boi co che versioned invalidation (bao gom ca key :limit)
+TRACKED_ANALYTICS_METRICS = (
+    'summary',
+    'top_tracks',
+    'top_artists',
+    'top_albums',
+    'radar',
+    'heatmap',
+    'bar_chart_race',
+    'weekly_comparison',
+    'genres',
+)
+
+VERSION_KEY_TTL = 86400 * 30
+
+
+def _version_cache_key(user_id: int) -> str:
+    return f"analytics_ver:{user_id}"
+
+
+def get_user_cache_version(user_id: int) -> int:
+    """Lay phien ban cache hien tai cua user (mac dinh 1)."""
+    ver_key = _version_cache_key(user_id)
+    try:
+        version = cache.get(ver_key)
+        if version is None:
+            cache.set(ver_key, 1, timeout=VERSION_KEY_TTL)
+            return 1
+        return int(version)
+    except Exception as e:
+        logger.warning(f"Cache version get failed for user {user_id}: {e}.")
+        return 1
+
+
+def build_analytics_cache_key(user_id: int, metric_name: str, range_key: str, limit: int | None = None) -> str:
+    """Tao cache key co lap theo user version: analytics:v{ver}:{user_id}:{metric_name}:{range_key}[:limit]."""
+    version = get_user_cache_version(user_id)
+    base_key = f"analytics:v{version}:{user_id}:{metric_name}:{range_key}"
+    if limit is not None:
+        return f"{base_key}:{limit}"
+    return base_key
+
 
 def get_or_set_cached_metric(cache_key: str, ttl: int, compute_fn):
     """
@@ -58,48 +98,26 @@ def get_or_set_cached_metric(cache_key: str, ttl: int, compute_fn):
 
     return data
 
+
 def invalidate_user_analytics_cache(user_id: int):
-    """Xoa toan bo cache thong ke cua user khi co du lieu moi hoac dang nhap lai."""
+    """
+    Vo hieu hoa toan bo cache thong ke cua rieng user_id bang cach tang cache version.
+    Khong su dung cache.clear() de tranh xoa nham cache cua user khac va AI/cooldown keys.
+    """
+    ver_key = _version_cache_key(user_id)
     try:
-        # 1. Neu la Redis hoac cache backend co ho tro delete_pattern
-        if hasattr(cache, 'delete_pattern'):
-            try:
-                cache.delete_pattern(f"analytics:{user_id}:*")
-                return
-            except Exception:
-                pass
+        try:
+            cache.incr(ver_key)
+            return
+        except ValueError:
+            # Key chua ton tai trong cache backend -> khoi tao o version 2
+            cache.set(ver_key, 2, timeout=VERSION_KEY_TTL)
+            return
+        except Exception:
+            pass
 
-        # 2. Neu la LocMemCache (chay local dev) - Xoa truc tiep tu internal dict
-        if hasattr(cache, '_cache'):
-            try:
-                prefix = f"analytics:{user_id}:"
-                raw_keys = list(cache._cache.keys())
-                for k in raw_keys:
-                    if prefix in str(k):
-                        cache._cache.pop(k, None)
-                        if hasattr(cache, '_expire_info'):
-                            cache._expire_info.pop(k, None)
-            except Exception:
-                pass
-
-        # 3. Quet va xoa toan bo to hop key pho bien
-        metrics = ['summary', 'top_tracks', 'top_artists', 'top_albums', 'radar', 'heatmap', 'bar_chart_race', 'weekly_comparison', 'genres']
-        ranges = ['7d', '30d', '1y']
-        limits = [5, 10, 20, 50]
-
-        for metric in metrics:
-            for r in ranges:
-                cache.delete(build_analytics_cache_key(user_id, metric, r))
-                for p in ['week', 'month', 'year']:
-                    cache.delete(build_analytics_cache_key(user_id, metric, f"{r}_{p}"))
-                for lim in limits:
-                    cache.delete(f"{build_analytics_cache_key(user_id, metric, r)}:{lim}")
-
-        # 4. Neu chay LocMemCache local va khong co delete_pattern, don dep sach cache de tranh sai lech so lieu
-        if not hasattr(cache, 'delete_pattern'):
-            try:
-                cache.clear()
-            except Exception:
-                pass
+        current = cache.get(ver_key)
+        next_ver = (int(current) + 1) if current is not None else 2
+        cache.set(ver_key, next_ver, timeout=VERSION_KEY_TTL)
     except Exception as e:
         logger.warning(f"Invalidate cache failed for user {user_id}: {e}.")
