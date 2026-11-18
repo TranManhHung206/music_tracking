@@ -108,6 +108,9 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
               <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/25">
                 Agentic AI
               </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-obsidian-bg text-text-muted border border-slate-800">
+                Phạm vi: {periodLabel}
+              </span>
             </div>
             <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
               {isPreview

@@ -86,11 +86,11 @@ export const RecentScrobblesList: React.FC<RecentScrobblesListProps> = ({
                 Nhật Ký Nghe Nhạc Gần Đây
               </h3>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-spotify-green/10 text-spotify-green border border-spotify-green/25">
-                Mới nhất
+                20 lượt phát mới nhất
               </span>
             </div>
             <p className="text-xs text-text-muted mt-0.5">
-              Các lượt nghe gần đây nhất trong tài khoản của bạn (không phụ thuộc bộ lọc kỳ ở trên)
+              Hiển thị các bài hát vừa phát gần nhất (không thay đổi theo bộ lọc Tuần / Tháng / Năm)
             </p>
           </div>
         </div>

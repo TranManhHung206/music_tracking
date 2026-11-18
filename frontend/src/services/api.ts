@@ -239,14 +239,14 @@ export const MOCK_MONTH_CALENDAR: MonthHeatmapData = {
   total_days: 31,
   total_plays: 248,
   peak_day: '2026-10-10',
-  peak_plays: 28,
-  active_days: 25,
-  max_density: 28,
+  peak_plays: 22,
+  active_days: 31,
+  max_density: 22,
   days: Array.from({ length: 31 }, (_, i) => {
     const dayNum = i + 1;
     const dateStr = `2026-10-${dayNum.toString().padStart(2, '0')}`;
     const weekday = ((4 + i - 1) % 7) + 1;
-    const count = (dayNum % 7 === 0 || dayNum % 6 === 0) ? Math.floor(Math.random() * 15) + 8 : Math.floor(Math.random() * 8) + 1;
+    const count = dayNum % 7 === 0 || dayNum % 6 === 0 ? 12 + (i % 9) : 3 + ((i * 2) % 6);
     return {
       date: dateStr,
       day_number: dayNum,
@@ -263,12 +263,12 @@ export const MOCK_YEAR_CALENDAR: YearHeatmapData = {
   total_days: 371,
   total_plays: 2840,
   peak_day: '2026-06-18',
-  peak_plays: 45,
+  peak_plays: 20,
   active_days: 280,
   longest_streak: 18,
   top_month: 10,
   top_month_plays: 412,
-  max_density: 45,
+  max_density: 20,
   months_header: [
     { month: 1, label: 'T1', start_week: 0 },
     { month: 2, label: 'T2', start_week: 4 },
@@ -286,7 +286,7 @@ export const MOCK_YEAR_CALENDAR: YearHeatmapData = {
   days: Array.from({ length: 53 * 7 }, (_, i) => {
     const weekIndex = Math.floor(i / 7);
     const dayOfWeek = (i % 7) + 1;
-    const count = Math.random() > 0.3 ? Math.floor(Math.random() * 20) + 1 : 0;
+    const count = i % 10 === 0 ? 0 : ((i * 3 + 5) % 18) + 1;
     return {
       date: `2026-W${weekIndex + 1}-${dayOfWeek}`,
       month: Math.min(12, Math.floor(weekIndex / 4.4) + 1),
@@ -310,11 +310,11 @@ export const MOCK_HEATMAP: HeatmapData = {
     const hour = i % 24;
     let count = 0;
     if (hour >= 20 && hour <= 23) {
-      count = Math.floor(Math.random() * 15) + 4;
+      count = ((day * 3 + hour) % 12) + 4;
     } else if (hour >= 8 && hour <= 18) {
-      count = Math.floor(Math.random() * 8);
+      count = (day + hour) % 8;
     } else if (hour >= 0 && hour <= 2) {
-      count = Math.floor(Math.random() * 10) + 2;
+      count = ((day + hour) % 6) + 2;
     }
     return { day_of_week: day, hour, count };
   }),
@@ -609,7 +609,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: formatISODate(mon),
       end_date: formatISODate(sun),
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 311 : i === 1 ? 250 : 0,
     });
   }
 
@@ -629,7 +629,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: `${y}-${mStr}-01`,
       end_date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 685 : i === 1 ? 540 : 0,
     });
   }
 
@@ -646,7 +646,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: `${y}-01-01`,
       end_date: `${y}-12-31`,
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 2840 : i === 1 ? 2150 : 0,
     });
   }
 

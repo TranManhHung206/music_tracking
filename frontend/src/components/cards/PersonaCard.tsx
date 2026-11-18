@@ -127,7 +127,7 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
                 {getProviderLabel(persona.provider_used)}
               </span>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-obsidian-bg text-text-muted border border-slate-800">
-                Cửa sổ: 30 ngày gần nhất
+                Cửa sổ: 30 ngày gần nhất (độc lập kỳ lọc)
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-1 break-words">

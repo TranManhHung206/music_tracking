@@ -158,9 +158,10 @@ class FrontendBackendContractTests(APITestCase):
         res_preset = self.client.get('/api/analytics/summary/?time_range=30d')
         self.assertEqual(res_preset.status_code, status.HTTP_200_OK)
         d_preset = res_preset.json()
-        for f in ['total_plays', 'total_duration_ms', 'total_hours', 'unique_artists_count', 'unique_albums_count', 'time_range']:
+        for f in ['total_plays', 'total_duration_ms', 'total_hours', 'unique_artists_count', 'unique_albums_count', 'unique_tracks_count', 'time_range']:
             self.assertIn(f, d_preset, f"Thieu truong '{f}' trong SummaryStats")
         self.assertEqual(d_preset['total_plays'], 5)
+        self.assertEqual(d_preset['unique_tracks_count'], 1)
 
         # Mode B: Discrete Calendar Period
         now = timezone.now().date()

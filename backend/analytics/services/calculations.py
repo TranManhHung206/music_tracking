@@ -36,6 +36,7 @@ def get_listening_summary(user, start_dt, end_dt) -> dict:
 
     unique_artists_count = qs.filter(track__artists__isnull=False).values('track__artists').distinct().count()
     unique_albums_count = qs.filter(track__album__isnull=False).values('track__album').distinct().count()
+    unique_tracks_count = qs.filter(track__isnull=False).values('track').distinct().count()
 
     return {
         "total_plays": total_plays,
@@ -43,6 +44,7 @@ def get_listening_summary(user, start_dt, end_dt) -> dict:
         "total_hours": total_hours,
         "unique_artists_count": unique_artists_count,
         "unique_albums_count": unique_albums_count,
+        "unique_tracks_count": unique_tracks_count,
     }
 
 def get_top_tracks(user, start_dt, end_dt, limit: int = 10) -> list[dict]:

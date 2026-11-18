@@ -19,18 +19,10 @@ import {
   api,
   ApiError,
   isRequestCanceled,
-  MOCK_SUMMARY,
-  MOCK_TOP_TRACKS,
-  MOCK_TOP_ARTISTS,
-  MOCK_TOP_ALBUMS,
-  MOCK_RADAR,
-  MOCK_HEATMAP,
-  MOCK_WEEKLY_COMPARISON,
-  MOCK_GENRES,
   MOCK_PERSONA,
   MOCK_LISTENING_HISTORY,
-  MOCK_MUSIC_FACTS,
 } from '../services/api';
+import { getDemoSnapshotForPeriod } from '../services/demoData';
 import {
   ALL_SECTIONS,
   EMPTY_GENRES,
@@ -102,24 +94,29 @@ export function useDashboardData({
     setAnalyticsError(null);
   }, []);
 
-  const populateDemoData = useCallback(() => {
-    abortControllerRef.current?.abort();
-    requestIdRef.current += 1;
-    setAnalyticsError(null);
-    setSectionStates(createSectionStatusMap());
-    setSummary(MOCK_SUMMARY);
-    setTopTracks(MOCK_TOP_TRACKS);
-    setTopArtists(MOCK_TOP_ARTISTS);
-    setTopAlbums(MOCK_TOP_ALBUMS);
-    setRadarData(MOCK_RADAR);
-    setHeatmapData(MOCK_HEATMAP);
-    setWeeklyComparison(MOCK_WEEKLY_COMPARISON);
-    setGenreData(MOCK_GENRES);
-    setRecentScrobbles(MOCK_LISTENING_HISTORY);
-    setPersona(MOCK_PERSONA);
-    setMusicFacts(MOCK_MUSIC_FACTS.facts);
-    setAgentMeta(MOCK_MUSIC_FACTS.agent_meta);
-  }, []);
+  const populateDemoData = useCallback(
+    (targetPeriod: CalendarPeriodItem | null = null, targetType: CalendarPeriodType = periodType) => {
+      abortControllerRef.current?.abort();
+      requestIdRef.current += 1;
+      setAnalyticsError(null);
+      setSectionStates(createSectionStatusMap());
+
+      const bundle = getDemoSnapshotForPeriod(targetPeriod, targetType);
+      setSummary(bundle.summary);
+      setTopTracks(bundle.topTracks);
+      setTopArtists(bundle.topArtists);
+      setTopAlbums(bundle.topAlbums);
+      setRadarData(bundle.radarData);
+      setHeatmapData(bundle.heatmapData);
+      setWeeklyComparison(bundle.weeklyComparison);
+      setGenreData(bundle.genreData);
+      setRecentScrobbles(MOCK_LISTENING_HISTORY);
+      setPersona(MOCK_PERSONA);
+      setMusicFacts(bundle.musicFacts);
+      setAgentMeta(bundle.agentMeta);
+    },
+    [periodType]
+  );
 
   const setSectionStatus = useCallback((key: SectionKey, loading: boolean, error: string | null) => {
     setSectionStates((prev) => ({
@@ -132,7 +129,7 @@ export function useDashboardData({
     async (period: CalendarPeriodItem | null, options?: { clearPeriodData?: boolean }) => {
       if (!user) {
         if (isDemoMode) {
-          setHeatmapData((prev) => ({ ...prev, period_type: periodType }));
+          populateDemoData(period, periodType);
         }
         return;
       }
@@ -269,7 +266,7 @@ export function useDashboardData({
         setAnalyticsError(firstNonCancelMsg);
       }
     },
-    [user, isDemoMode, periodType, onUnauthorized]
+    [user, isDemoMode, periodType, onUnauthorized, populateDemoData]
   );
 
   const retrySection = useCallback(
@@ -341,18 +338,22 @@ export function useDashboardData({
   );
 
   useEffect(() => {
-    if (!user || !selectedPeriod) return;
+    if (!selectedPeriod) return;
+    if (!user && !isDemoMode) return;
     let isCancelled = false;
     Promise.resolve().then(() => {
-      if (!isCancelled) {
+      if (isCancelled) return;
+      if (user) {
         void refreshAllData(selectedPeriod);
+      } else if (isDemoMode) {
+        populateDemoData(selectedPeriod, periodType);
       }
     });
     return () => {
       isCancelled = true;
       abortControllerRef.current?.abort();
     };
-  }, [user, selectedPeriod, refreshAllData]);
+  }, [user, isDemoMode, periodType, selectedPeriod, refreshAllData, populateDemoData]);
 
   return {
     summary,

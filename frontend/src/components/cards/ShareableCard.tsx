@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { Download, Sparkles, Music, X, Disc, Mic2, Music2, Headphones, Clock, Flame } from 'lucide-react';
 import { SegmentedControl, type SegmentedOption } from '../ui/SegmentedControl';
+import type { CalendarPeriodType } from '../../types/analytics';
+import { getListeningFrequencyLabel } from '../../utils/analyticsFormatters';
 
 export type AspectRatioType = '9:16' | '4:5' | '1:1' | '16:9';
 
@@ -27,6 +29,7 @@ export interface ShareableCardProps {
   topArtists: string[];
   topGenres?: string[];
   period: string;
+  periodType?: CalendarPeriodType;
   isOpen: boolean;
   onClose: () => void;
   totalPlays?: number;
@@ -108,6 +111,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
   topArtists,
   topGenres,
   period,
+  periodType = 'week',
   isOpen,
   onClose,
   totalPlays = 0,
@@ -584,7 +588,9 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                         <Flame className="w-2.5 h-2.5 text-amber-400" />
                         <span>Tần suất</span>
                       </div>
-                      <span className="text-[11px] font-black text-amber-300 mt-0.5">Sôi nổi</span>
+                      <span className="text-[11px] font-black text-amber-300 mt-0.5">
+                        {getListeningFrequencyLabel(totalPlays, periodType)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -736,7 +742,9 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                         <Flame className="w-2.5 h-2.5 text-amber-400" />
                         <span>Tần suất</span>
                       </div>
-                      <span className="text-xs font-black text-amber-300 mt-0.5">Sôi nổi</span>
+                      <span className="text-xs font-black text-amber-300 mt-0.5">
+                        {getListeningFrequencyLabel(totalPlays, periodType)}
+                      </span>
                     </div>
                   </div>
                 </div>

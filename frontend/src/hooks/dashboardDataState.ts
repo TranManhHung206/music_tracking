@@ -58,6 +58,7 @@ export const EMPTY_SUMMARY: SummaryStats = {
   total_hours: 0,
   unique_artists_count: 0,
   unique_albums_count: 0,
+  unique_tracks_count: 0,
   time_range: 'week',
 };
 

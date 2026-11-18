@@ -17,6 +17,7 @@ import {
   buildMockRecommendations,
   getDynamicMockCalendarPeriods,
 } from './services/api';
+import { formatListeningDuration } from './utils/analyticsFormatters';
 import { useToast } from './hooks/useToast';
 import { useAuthSession } from './hooks/useAuthSession';
 import { useDashboardPeriod } from './hooks/useDashboardPeriod';
@@ -179,7 +180,7 @@ export function App() {
     setPeriodType('week');
     setAvailablePeriods(dynamicMocks.week);
     setSelectedPeriod(dynamicMocks.week[0]);
-    populateDemoData();
+    populateDemoData(dynamicMocks.week[0], 'week');
     addToast('info', 'Đã bật Chế độ Xem thử (Demo) với dữ liệu mẫu.');
   }, [setPeriodType, setAvailablePeriods, setSelectedPeriod, populateDemoData, addToast]);
 
@@ -295,6 +296,25 @@ export function App() {
     !isSummaryLoading && !summaryError && summary.total_plays === 0;
   const isSummaryFailedWithNoData =
     !isSummaryLoading && Boolean(summaryError) && summary.total_plays === 0;
+
+  const compSummary = weeklyComparison?.summary;
+  let playsTrend: string | undefined;
+  let playsTrendTone: 'positive' | 'negative' | 'neutral' = 'neutral';
+  if (
+    !sectionStates.comparison.loading &&
+    !sectionStates.comparison.error &&
+    summary.total_plays > 0 &&
+    compSummary
+  ) {
+    if (compSummary.baseline_status === 'new_activity') {
+      playsTrend = 'Hoạt động mới';
+      playsTrendTone = 'positive';
+    } else if (compSummary.baseline_status === 'normal' && compSummary.growth_percentage !== null) {
+      const g = compSummary.growth_percentage;
+      playsTrend = g > 0 ? `+${g}%` : `${g}%`;
+      playsTrendTone = g > 0 ? 'positive' : g < 0 ? 'negative' : 'neutral';
+    }
+  }
 
   return (
     <div className="min-h-screen bg-obsidian-bg text-text-main flex flex-col">
@@ -432,29 +452,39 @@ export function App() {
             {/* 1. Quick Stats Overview Grid */}
             <section aria-label="Chỉ số tổng quan kỳ thống kê" className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
               <StatCard
-                title="Tổng Lượt Nghe"
+                title="Lượt phát"
                 value={summary.total_plays.toLocaleString()}
-                subtitle={selectedPeriod ? selectedPeriod.label : 'Trong kỳ này'}
+                trend={playsTrend}
+                trendTone={playsTrendTone}
+                subtitle={
+                  summary.unique_tracks_count && summary.unique_tracks_count > 0
+                    ? `${summary.unique_tracks_count.toLocaleString()} bài hát khác nhau`
+                    : selectedPeriod
+                    ? selectedPeriod.label
+                    : 'Trong kỳ này'
+                }
+                tooltip="Tổng lượt phát trong kỳ đang chọn (một bài nghe nhiều lần tính nhiều lượt) kèm chênh lệch so với kỳ trước tương đương."
                 icon={<Headphones className="w-4 h-4 sm:w-5 sm:h-5" />}
                 isLoading={isSummaryLoading}
               />
               <StatCard
-                title="Thời Lượng Nghe Ước Tính"
-                value={`${summary.total_hours} giờ`}
-                subtitle="Tổng thời lượng các bài đã phát"
+                title="Thời lượng nghe ước tính"
+                value={formatListeningDuration(summary.total_duration_ms, summary.total_hours)}
+                subtitle="Tổng độ dài các bản nhạc đã phát"
+                tooltip="Ước tính từ thời lượng chuẩn của mỗi bản nhạc đã phát trong kỳ."
                 icon={<Clock className="w-4 h-4 sm:w-5 sm:h-5" />}
                 isLoading={isSummaryLoading}
               />
               <StatCard
-                title="Nghệ Sĩ Đã Nghe"
-                value={summary.unique_artists_count}
-                subtitle="Nghệ sĩ độc nhất"
+                title="Nghệ sĩ"
+                value={summary.unique_artists_count.toLocaleString()}
+                subtitle="Nghệ sĩ độc nhất trong kỳ"
                 icon={<Mic2 className="w-4 h-4 sm:w-5 sm:h-5" />}
                 isLoading={isSummaryLoading}
               />
               <StatCard
-                title="Album Đã Thưởng Thức"
-                value={summary.unique_albums_count}
+                title="Album"
+                value={summary.unique_albums_count.toLocaleString()}
                 subtitle="Album / Đĩa đơn độc nhất"
                 icon={<Disc className="w-4 h-4 sm:w-5 sm:h-5" />}
                 isLoading={isSummaryLoading}
@@ -499,7 +529,81 @@ export function App() {
               </section>
             ) : (
               <>
-                {/* 2. Highlight AI Persona Card */}
+                {/* 2. Xu hướng Nghe nhạc Thích ứng (Tuần / Tháng / Năm) */}
+                <section>
+                  <WeeklyComparisonChart
+                    data={weeklyComparison}
+                    periodType={periodType}
+                    isLoading={sectionStates.comparison.loading}
+                    error={sectionStates.comparison.error}
+                    onRetry={() => retrySection('comparison')}
+                  />
+                </section>
+
+                {/* 3. Bản đồ Nhiệt Hoạt động Nghe nhạc */}
+                <section>
+                  <ListeningHeatmap
+                    data={heatmapData.matrix}
+                    periodType={periodType}
+                    monthCalendar={heatmapData.month_calendar}
+                    yearCalendar={heatmapData.year_calendar}
+                    selectedPeriodLabel={selectedPeriod?.label}
+                    isLoading={sectionStates.heatmap.loading}
+                    error={sectionStates.heatmap.error}
+                    onRetry={() => retrySection('heatmap')}
+                  />
+                </section>
+
+                {/* 4. Khẩu vị Âm nhạc: Radar 5D & Phân bố Thể loại */}
+                <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                  <div className="lg:col-span-5 flex min-w-0">
+                    <RadarChartComponent
+                      data={radarData.features}
+                      totalTracksAnalyzed={radarData.total_tracks_analyzed}
+                      provenance={radarData.provenance}
+                      isLoading={sectionStates.radar.loading}
+                      error={sectionStates.radar.error}
+                      onRetry={() => retrySection('radar')}
+                    />
+                  </div>
+                  <div className="lg:col-span-7 flex min-w-0">
+                    <GenreDistribution
+                      data={genreData}
+                      isLoading={sectionStates.genres.loading}
+                      error={sectionStates.genres.error}
+                      onRetry={() => retrySection('genres')}
+                    />
+                  </div>
+                </section>
+
+                {/* 5. Bảng xếp hạng: Top Bài hát, Top Nghệ sĩ & Top Album */}
+                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <TopTracksList
+                    tracks={topTracks}
+                    onFindSimilar={handleFindSimilarSongs}
+                    periodLabel={selectedPeriod?.label}
+                    isLoading={sectionStates.topTracks.loading}
+                    error={sectionStates.topTracks.error}
+                    onRetry={() => retrySection('topTracks')}
+                  />
+                  <TopArtistsList
+                    artists={topArtists}
+                    periodLabel={selectedPeriod?.label}
+                    isLoading={sectionStates.topArtists.loading}
+                    error={sectionStates.topArtists.error}
+                    onRetry={() => retrySection('topArtists')}
+                  />
+                  <TopAlbumsList
+                    albums={topAlbums}
+                    periodLabel={selectedPeriod?.label}
+                    isLoading={sectionStates.topAlbums.loading}
+                    error={sectionStates.topAlbums.error}
+                    onRetry={() => retrySection('topAlbums')}
+                    className="md:col-span-2 lg:col-span-1"
+                  />
+                </section>
+
+                {/* 6. Khám phá AI: AI Music Persona & AI Music Detective */}
                 <section>
                   <PersonaCard
                     persona={persona}
@@ -513,7 +617,6 @@ export function App() {
                   />
                 </section>
 
-                {/* 3. AI Music Detective Facts Section */}
                 <section>
                   <MusicFactsSection
                     facts={musicFacts}
@@ -524,77 +627,6 @@ export function App() {
                     onRefresh={handleRefreshFacts}
                     onRetry={() => retrySection('facts')}
                     cooldownSeconds={factsCooldown}
-                  />
-                </section>
-
-                {/* 4. Deep Visual Analytics: Radar & Listening Heatmap */}
-                <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  <div className="lg:col-span-5 flex min-w-0">
-                    <RadarChartComponent
-                      data={radarData.features}
-                      totalTracksAnalyzed={radarData.total_tracks_analyzed}
-                      provenance={radarData.provenance}
-                      isLoading={sectionStates.radar.loading}
-                      error={sectionStates.radar.error}
-                      onRetry={() => retrySection('radar')}
-                    />
-                  </div>
-                  <div className="lg:col-span-7 flex min-w-0">
-                    <ListeningHeatmap
-                      data={heatmapData.matrix}
-                      periodType={periodType}
-                      monthCalendar={heatmapData.month_calendar}
-                      yearCalendar={heatmapData.year_calendar}
-                      selectedPeriodLabel={selectedPeriod?.label}
-                      isLoading={sectionStates.heatmap.loading}
-                      error={sectionStates.heatmap.error}
-                      onRetry={() => retrySection('heatmap')}
-                    />
-                  </div>
-                </section>
-
-                {/* 5. Thể Loại Âm Nhạc Chủ Đạo */}
-                <section>
-                  <GenreDistribution
-                    data={genreData}
-                    isLoading={sectionStates.genres.loading}
-                    error={sectionStates.genres.error}
-                    onRetry={() => retrySection('genres')}
-                  />
-                </section>
-
-                {/* 6. Top Charts: Cân đối Tablet 2 cột (Album mở rộng hàng 2) & Desktop 3 cột */}
-                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <TopTracksList
-                    tracks={topTracks}
-                    onFindSimilar={handleFindSimilarSongs}
-                    isLoading={sectionStates.topTracks.loading}
-                    error={sectionStates.topTracks.error}
-                    onRetry={() => retrySection('topTracks')}
-                  />
-                  <TopArtistsList
-                    artists={topArtists}
-                    isLoading={sectionStates.topArtists.loading}
-                    error={sectionStates.topArtists.error}
-                    onRetry={() => retrySection('topArtists')}
-                  />
-                  <TopAlbumsList
-                    albums={topAlbums}
-                    isLoading={sectionStates.topAlbums.loading}
-                    error={sectionStates.topAlbums.error}
-                    onRetry={() => retrySection('topAlbums')}
-                    className="md:col-span-2 lg:col-span-1"
-                  />
-                </section>
-
-                {/* 7. Biểu Đồ So Sánh Xu Hướng Nghe Nhạc Thích Ứng */}
-                <section>
-                  <WeeklyComparisonChart
-                    data={weeklyComparison}
-                    periodType={periodType}
-                    isLoading={sectionStates.comparison.loading}
-                    error={sectionStates.comparison.error}
-                    onRetry={() => retrySection('comparison')}
                   />
                 </section>
               </>
@@ -637,6 +669,7 @@ export function App() {
         topArtists={topArtists.map((a) => a.name)}
         topGenres={genreData.genres.map((g) => g.name)}
         period={selectedPeriod ? selectedPeriod.label : 'Kỳ thống kê'}
+        periodType={periodType}
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         totalPlays={summary.total_plays}
