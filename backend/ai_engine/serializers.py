@@ -84,3 +84,40 @@ class CodebaseQueryResponseSerializer(serializers.Serializer):
     retrieved_chunks_count = serializers.IntegerField()
 
 
+class AssistantPeriodContextSerializer(serializers.Serializer):
+    """Validate thong tin ky dang chon tu Dashboard."""
+    period_type = serializers.ChoiceField(
+        choices=['week', 'month', 'year'],
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    start_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=20)
+    end_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=20)
+    label = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
+
+
+class AssistantQueryRequestSerializer(serializers.Serializer):
+    """Validate dau vao cho API Hybrid Music & Website Assistant."""
+    query = serializers.CharField(required=True, min_length=1, max_length=1000)
+    mode = serializers.ChoiceField(
+        choices=['auto', 'music_insights', 'website_support'],
+        default='auto',
+        required=False,
+    )
+    session_id = serializers.CharField(required=False, default='default', allow_blank=True, max_length=64)
+    period_context = AssistantPeriodContextSerializer(required=False, allow_null=True)
+    rag_mode = serializers.ChoiceField(
+        choices=['baseline_dense', 'hybrid_rrf', 'full_cascade'],
+        default='full_cascade',
+        required=False,
+    )
+    top_k = serializers.IntegerField(default=5, min_value=1, max_value=10, required=False)
+    use_cache = serializers.BooleanField(default=True, required=False)
+
+
+class AssistantSessionClearSerializer(serializers.Serializer):
+    """Validate yeu cau xoa lich su phien hoi thoai cua nguoi dung hien tai."""
+    session_id = serializers.CharField(required=False, default='default', allow_blank=True, max_length=64)
+
+

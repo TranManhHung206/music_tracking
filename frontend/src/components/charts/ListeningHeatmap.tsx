@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CalendarOff } from 'lucide-react';
 import type {
   HeatmapCell,
@@ -61,6 +61,51 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
 
   const activeSelection = selection && selection.scopeKey === scopeKey ? selection : null;
 
+  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+
+  const { weekCountMap, maxWeekCount, weekTotalPlays } = useMemo(() => {
+    const map = new Map<string, number>();
+    let maxCount = 1;
+    let total = 0;
+    for (const item of safeData) {
+      if (!item) continue;
+      const count = item.count || 0;
+      total += count;
+      if (count > maxCount) maxCount = count;
+      map.set(`${item.day_of_week}-${item.hour}`, count);
+    }
+    return { weekCountMap: map, maxWeekCount: maxCount, weekTotalPlays: total };
+  }, [safeData]);
+
+  const monthMax = useMemo(() => {
+    if (monthCalendar?.max_density) return monthCalendar.max_density;
+    const days = Array.isArray(monthCalendar?.days) ? monthCalendar.days : [];
+    let maxDensity = 1;
+    for (const d of days) {
+      if (d.count > maxDensity) maxDensity = d.count;
+    }
+    return maxDensity;
+  }, [monthCalendar]);
+
+  const { yearGridMap, monthHeaderMap, yearMax } = useMemo(() => {
+    const grid = new Map<string, YearHeatmapDay>();
+    const headers = new Map<number, string>();
+    const days = Array.isArray(yearCalendar?.days) ? yearCalendar.days : [];
+    const headerList = Array.isArray(yearCalendar?.months_header) ? yearCalendar.months_header : [];
+
+    let maxDensity = yearCalendar?.max_density || 1;
+    for (const d of days) {
+      grid.set(`${d.week_index}-${d.day_of_week}`, d);
+      if (!yearCalendar?.max_density && d.count > maxDensity) {
+        maxDensity = d.count;
+      }
+    }
+    for (const h of headerList) {
+      headers.set(h.start_week, h.label);
+    }
+    return { yearGridMap: grid, monthHeaderMap: headers, yearMax: maxDensity };
+  }, [yearCalendar]);
+
   const titleText =
     periodType === 'month'
       ? 'Mật Độ Nghe Nhạc Lịch Tháng'
@@ -96,9 +141,6 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
     );
   }
 
-  const safeData = Array.isArray(data) ? data : [];
-  const weekTotalPlays = safeData.reduce((acc, item) => acc + (item?.count || 0), 0);
-
   const isMonthEmpty = periodType === 'month' && monthCalendar && monthCalendar.total_plays === 0;
   const isYearEmpty = periodType === 'year' && yearCalendar && yearCalendar.total_plays === 0;
   const isWeekEmpty =
@@ -123,9 +165,6 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
     );
   }
 
-  // 1. Logic cho chế độ Tuần (7x24)
-  const maxWeekCount = Math.max(...safeData.map((d) => d.count), 1);
-
   const getWeekCellColor = (count: number) => {
     if (count === 0) return 'bg-obsidian-border/45 text-slate-400 hover:bg-obsidian-border';
     const ratio = count / maxWeekCount;
@@ -135,14 +174,7 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
     return 'bg-spotify-green text-black font-bold hover:bg-spotify-hover';
   };
 
-  const getWeekCount = (day: number, hour: number) => {
-    const item = safeData.find((d) => d.day_of_week === day && d.hour === hour);
-    return item ? item.count : 0;
-  };
-
-  // 2. Logic cho chế độ Tháng (Lịch 7 cột)
-  const monthMax =
-    monthCalendar?.max_density || Math.max(...(monthCalendar?.days || []).map((d) => d.count), 1);
+  const getWeekCount = (day: number, hour: number) => weekCountMap.get(`${day}-${hour}`) ?? 0;
 
   const getMonthDayColor = (count: number) => {
     if (count === 0) return 'bg-obsidian-border/40 border-slate-800/80 hover:border-slate-600 text-slate-400';
@@ -152,10 +184,6 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
     if (ratio < 0.75) return 'bg-emerald-600/90 border-emerald-500/80 hover:border-emerald-400 text-white';
     return 'bg-spotify-green border-spotify-hover text-slate-950 font-bold hover:brightness-110 shadow-sm shadow-spotify-green/20';
   };
-
-  // 3. Logic cho chế độ Năm (53 tuần x 7 ngày)
-  const yearMax =
-    yearCalendar?.max_density || Math.max(...(yearCalendar?.days || []).map((d) => d.count), 1);
 
   const getYearDayColor = (count: number, isInRange: boolean) => {
     if (!isInRange) return 'opacity-0 pointer-events-none';
@@ -330,15 +358,15 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
                 <div className="w-7 pr-1.5 shrink-0" />
                 <div className="flex gap-1 flex-1">
                   {Array.from({ length: yearCalendar.total_weeks || 53 }).map((_, weekIdx) => {
-                    const mh = yearCalendar.months_header.find((m) => m.start_week === weekIdx);
+                    const monthLabel = monthHeaderMap.get(weekIdx);
                     return (
                       <div
                         key={weekIdx}
                         className="w-3 text-left font-semibold text-text-muted relative shrink-0"
                       >
-                        {mh && (
+                        {monthLabel && (
                           <span className="absolute left-0 top-0 whitespace-nowrap">
-                            {mh.label}
+                            {monthLabel}
                           </span>
                         )}
                       </div>
@@ -359,13 +387,11 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
                 </div>
 
                 <div className="flex gap-1 flex-1">
-                  {Array.from({ length: yearCalendar.total_weeks || 53 }).map((_, weekIdx) => {
-                    const daysInWeek = yearCalendar.days.filter((d) => d.week_index === weekIdx);
-                    return (
+                  {Array.from({ length: yearCalendar.total_weeks || 53 }).map((_, weekIdx) => (
                       <div key={weekIdx} className="flex flex-col gap-1 shrink-0">
                         {Array.from({ length: 7 }).map((_, dayIdx) => {
                           const weekday = dayIdx + 1;
-                          const day = daysInWeek.find((d) => d.day_of_week === weekday);
+                          const day = yearGridMap.get(`${weekIdx}-${weekday}`);
                           if (!day) {
                             return <div key={weekday} className="w-3 h-3 opacity-0" aria-hidden="true" />;
                           }
@@ -391,8 +417,7 @@ export const ListeningHeatmap: React.FC<ListeningHeatmapProps> = ({
                           );
                         })}
                       </div>
-                    );
-                  })}
+                  ))}
                 </div>
               </div>
             </div>

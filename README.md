@@ -14,15 +14,17 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Bảo Mật & Mã Hóa Token Spotify: Toàn bộ access token và refresh token của người dùng đều được mã hóa đối xứng AES-256 qua Fernet trước khi lưu vào cơ sở dữ liệu, đảm bảo bí mật tuyệt đối.
 
 ### 2. Bảng Điều Khiển Phân Tích Trực Quan
-* Biểu đồ Radar Đặc tính Âm thanh: Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc chuẩn xác BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát.
-* Bản Đồ Nhiệt Thích Ứng Đa Chu Kỳ (Adaptive Calendar Heatmap): Tự động chuyển đổi giao diện linh hoạt và tối ưu theo chu kỳ thời gian:
-  * Chu kỳ Tuần (Week): Ma trận 7 ngày x 24 giờ phân tích nhịp sinh học và khung giờ vàng nghe nhạc trong tuần.
-  * Chu kỳ Tháng (Month): Lịch Bàn Tháng (Monthly Calendar Grid 7 cột x 5 hàng) hiển thị trực quan cường độ nghe nhạc của từng ngày từ ngày 1 đến 28..31, đệm đúng thứ đầu tháng, kèm số liệu ngày đỉnh cao và tỷ lệ ngày hoạt động.
-  * Chu kỳ Năm (Year): Bản đồ hoạt động cả năm dạng Annual Activity Graph (53 tuần x 7 ngày) phong cách GitHub / Spotify Wrapped, bố cục thanh thoát kèm thanh cuộn mượt mà, phân định 12 tháng rõ ràng và bảng chỉ số chuỗi nghe liên tục (Streak), tháng bùng nổ nhất và ngày đỉnh cao.
-* So Sánh Lượt Nghe Theo Tuần: Biểu đồ cột trực quan so sánh số lượt nghe mỗi ngày giữa tuần này và tuần trước kèm thông số tăng trưởng.
-* Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification): Kết hợp thông minh giữa nhận diện khu vực địa phương (hợp nhất chuẩn hóa V-Pop, K-Pop) và phân loại chuyên sâu bằng chỉ số sóng âm thanh DSP đối với các dòng nhạc quốc tế (EDM / Electronic, Phonk / High Energy, Acoustic / Lo-Fi, Hip-Hop / Rap, US-UK / Pop, Global Pop).
-* Bảng Xếp Hạng Toàn Diện: Theo dõi Top Bài Hát, Top Nghệ Sĩ (đồng bộ ảnh chân dung chính chủ từ Spotify Web API theo mã định danh spotify_id riêng biệt) và Top Album được nghe nhiều nhất.
-* Nhật Ký Nghe Gần Đây: Xem danh sách chi tiết các lượt nghe mới nhất với đầy đủ ảnh bìa và thông tin bài hát.
+* **Biểu Đồ Radar Đặc Tính Âm Thanh & Minh Bạch Nguồn Dữ Liệu:** Trích xuất trực tiếp từ sóng âm thanh 30 giây (DSP Engine) bằng thư viện `librosa` để đo đạc BPM thật, năng lượng RMS thật, độ mộc mạc và tâm trạng bài hát; hiển thị rõ tỷ lệ dữ liệu đo trực tiếp so với ước lượng ngay trên giao diện.
+* **Bản Đồ Nhiệt Thích Ứng Đa Chu Kỳ (Adaptive Calendar Heatmap):** Tự động chuyển đổi giao diện theo chu kỳ thời gian và hỗ trợ chạm/nhấn trực tiếp từng ô trên cả máy tính lẫn màn hình cảm ứng:
+  * **Chu kỳ Tuần (Week):** Ma trận 7 ngày x 24 giờ phân tích nhịp sinh học và khung giờ nghe nhạc nổi bật trong tuần.
+  * **Chu kỳ Tháng (Month):** Lịch Bàn Tháng (Monthly Calendar Grid 7 cột x 5 hàng) hiển thị cường độ nghe nhạc từng ngày từ ngày 1 đến cuối tháng, kèm ngày đỉnh cao và tỷ lệ ngày hoạt động.
+  * **Chu kỳ Năm (Year):** Bản đồ hoạt động cả năm (53 tuần x 7 ngày) phân định 12 tháng rõ ràng kèm chỉ số chuỗi ngày nghe liên tục (Streak), tháng nổi bật nhất và ngày đỉnh cao.
+* **Biểu Đồ So Sánh Xu Hướng Nghe Nhạc Thích Ứng (Adaptive Trend Comparison):** Tự động thích ứng trục so sánh theo từng chu kỳ:
+  * **Tuần:** Đối chiếu 7 ngày trong tuần với tuần liền trước.
+  * **Tháng:** Đối chiếu từng tuần trong tháng với tháng liền trước, tự động gắn nhãn hoạt động mới khi kỳ trước không có dữ liệu.
+  * **Năm:** Đối chiếu tổng lượt phát 12 tháng với năm liền trước.
+* **Phân Bố Thể Loại Âm Nhạc Lai (Hybrid Genre Classification):** Kết hợp nhận diện nghệ sĩ theo khu vực (V-Pop, K-Pop) và phân loại bằng đặc trưng âm thanh DSP cho nhạc quốc tế; hỗ trợ thẻ thống kê chuyên biệt khi một thể loại chiếm 100% lượt phát trong kỳ.
+* **Bảng Xếp Hạng & Nhật Ký Nghe Gần Đây:** Theo dõi Top Bài Hát, Top Nghệ Sĩ (đồng bộ ảnh chân dung theo mã định danh `spotify_id` riêng biệt), Top Album và lịch sử phát gần nhất gắn rõ phạm vi thời gian đang chọn.
 
 ### 3. Bộ Lọc Chu Kỳ Thời Gian Cố Định
 * Dễ dàng lựa chọn và tra cứu thống kê theo các chu kỳ cố định: Tuần (ISO Week từ Thứ Hai đến Chủ Nhật), Tháng hoặc Năm.
@@ -41,17 +43,15 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 * Gợi ý Bài hát Thông minh: Sử dụng thuật toán Machine Learning (KNN) để tìm kiếm và đề xuất các bài hát có giai điệu, phong cách tương đồng nhất với sở thích của bạn.
 
 
-### 5. Hệ Thống Codebase RAG & Trợ Lý Kiến Trúc Hệ Thống (Knowledge Harness RAG)
-* Truy vấn mã nguồn và kiến trúc: Cho phép đặt câu hỏi kỹ thuật về toàn bộ logic backend (models, services, views, tasks) và tài liệu hệ thống.
-* Thác truy xuất (Retrieval Cascade): Kết hợp Dense Vector (ChromaDB) và Sparse Search (BM25Plus với CodeTokenizer), hợp nhất bằng thuật toán Reciprocal Rank Fusion (RRF k=60) và tái xếp hạng TermSemanticReranker.
-* Trích dẫn kiểm chứng được (Citation Verification): Mọi khẳng định đều có nhãn trích dẫn `[S1]`, `[S2]` nối trực tiếp với file vật lý, vị trí dòng code và tên hàm/lớp (Symbol), ngăn chặn hoàn toàn ảo giác (hallucination).
-* Chế độ phòng vệ Escape Hatch: Tự động nhận diện và từ chối trả lời chính xác khi câu hỏi nằm ngoài phạm vi tài liệu dự án.
-* Tích hợp Agent Tool: Công cụ `@tool search_codebase` cho phép Agentic AI tự động tra cứu mã nguồn trong chu trình ReAct.
+### 5. Trợ Lý Lai MusicTrack Assistant (Dữ Liệu Âm Nhạc & Hỗ Trợ Website)
+* **3 Chế Độ Hỏi Đáp Linh Hoạt:** Cho phép chọn chế độ `Tự động` (nhận diện ý định và hỏi làm rõ nếu câu hỏi mơ hồ), `Dữ liệu Âm nhạc` (hỏi đáp cá nhân hóa) hoặc `Hỗ trợ Website` (hướng dẫn sử dụng và giải đáp cơ chế).
+* **Phân Tích Dữ Liệu Âm Nhạc Cá Nhân Theo Kỳ:** Tự động đồng bộ với chu kỳ Tuần / Tháng / Năm đang chọn trên Dashboard (hoặc theo khoảng thời gian bạn nhắc trong câu hỏi) để giải đáp tổng lượt phát, giờ nghe, xu hướng so với kỳ trước, Top bài hát/nghệ sĩ/album/thể loại, khung giờ vàng và gợi ý bài hát tương đồng kèm căn cứ số liệu rõ ràng.
+* **Hỗ Trợ Website Thân Thiện & Phân Quyền An Toàn:** Cung cấp hướng dẫn cách đồng bộ Spotify, bảo vệ quyền riêng tư, giải thích các chỉ số phân tích và tự động duy trì ngữ cảnh hội thoại nhiều lượt theo phiên; các tùy chọn quản trị hệ thống và thông tin kỹ thuật nội bộ được ẩn khỏi tài khoản người dùng thông thường.
 
-### 6. Giao Diện Obsidian Dark Mode & Chia Sẻ Mạng Xã Hội
-* Giao diện tối Obsidian hiện đại, phù hợp với phong cách âm nhạc và tôn mắt khi xem vào ban đêm.
-* Chế độ Xem thử (Demo Mode): Trải nghiệm đầy đủ mọi tính năng với dữ liệu mẫu ngay cả khi chưa kết nối tài khoản Spotify.
-* Xuất Thẻ Chia Sẻ Đa Tỷ Lệ: Tạo thẻ ảnh tổng kết gu âm nhạc và AI Persona độ phân giải cao 2x với 4 tỷ lệ chuẩn mạng xã hội (Story 9:16, Dọc Chân dung 4:5, Vuông Post 1:1, Ngang Banner 16:9). Tích hợp ảnh bìa album và chân dung nghệ sĩ thật từ Spotify, tối ưu bố cục cân đối và phòng vệ lỗi hiển thị.
+### 6. Giao Diện Tối Đa Thiết Bị & Chia Sẻ Mạng Xã Hội
+* **Trải Nghiệm Đa Thiết Bị (Responsive Desktop / Tablet / Mobile):** Tối ưu bố cục lưới, bộ chọn chu kỳ và biểu đồ cuộn ngang mượt mà từ màn hình điện thoại nhỏ (`320px`) đến màn hình máy tính rộng, hỗ trợ đầy đủ điều hướng bàn phím (`Tab`, `Enter`, `Escape`) và tôn trọng tùy chọn giảm chuyển động (`prefers-reduced-motion`).
+* **Chế Độ Xem Thử (Demo Mode) Đồng Bộ Toàn Trang:** Trải nghiệm đầy đủ cả 3 chế độ Tuần / Tháng / Năm, trạng thái kỳ rỗng và MusicTrack Assistant với dữ liệu mẫu đồng nhất ngay cả khi chưa kết nối Spotify.
+* **Xuất Thẻ Chia Sẻ Đa Tỷ Lệ:** Tạo thẻ ảnh tổng kết gu âm nhạc và AI Persona độ phân giải cao 2x với 4 tỷ lệ chuẩn mạng xã hội (Story 9:16, Dọc Chân dung 4:5, Vuông Post 1:1, Ngang Banner 16:9), hiển thị linh hoạt ảnh bìa thật từ Spotify và nhãn tần suất nghe phù hợp từng chu kỳ.
 
 ---
 

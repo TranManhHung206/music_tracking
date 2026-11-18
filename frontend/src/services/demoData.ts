@@ -15,7 +15,14 @@ import type {
   YearHeatmapData,
   YearHeatmapDay,
 } from '../types/analytics';
-import type { AgentMeta, MusicFact } from '../types/ai';
+import type {
+  AgentMeta,
+  AssistantEvidenceItem,
+  AssistantMode,
+  AssistantQueryResponse,
+  MusicFact,
+} from '../types/ai';
+import { formatListeningDuration } from '../utils/analyticsFormatters.ts';
 
 export interface DemoPeriodBundle {
   summary: SummaryStats;
@@ -672,6 +679,297 @@ export function getDemoSnapshotForPeriod(
       iterations_used: 2,
       tools_called: ['query_repeat_loops', 'query_artist_dominance'],
       is_fallback: false,
+    },
+  };
+}
+
+function normalizeDemoText(input: string): string {
+  return (input || '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function buildDemoAssistantReply(
+  query: string,
+  mode: AssistantMode,
+  period: CalendarPeriodItem | null | undefined,
+  periodType: CalendarPeriodType,
+  priorTurnsCount: number = 0
+): AssistantQueryResponse {
+  const norm = normalizeDemoText(query);
+  const websiteHints = [
+    'chong trung',
+    'bao mat',
+    'bao ve',
+    'tai khoan spotify',
+    'quyen rieng tu',
+    'token',
+    'dong bo',
+    'knn',
+    'dua vao',
+    'hoat dong',
+    'co che',
+    'tinh nang',
+    'website',
+    'demo',
+    'nhu the nao',
+  ];
+  const musicHints = [
+    'cua toi',
+    'toi nghe',
+    'tuan nay',
+    'tuan truoc',
+    'thang nay',
+    'thang truoc',
+    'nam nay',
+    'luot phat',
+    'luot nghe',
+    'top',
+    'bai hat',
+    'bai nao',
+    'nghe si',
+    'album',
+    'the loai',
+    'audio',
+    'radar',
+    'heatmap',
+    'khung gio',
+    'so sanh',
+    'goi y',
+    'tuong tu',
+    'persona',
+    'gu',
+  ];
+
+  const wHits = websiteHints.filter((h) => norm.includes(h)).length;
+  const mHits = musicHints.filter((h) => norm.includes(h)).length;
+
+  let resolvedDomain: 'music_insights' | 'website_support' | 'clarification' =
+    mode === 'auto' ? 'clarification' : mode;
+  if (mode === 'auto') {
+    if (wHits > mHits && wHits > 0) {
+      resolvedDomain = 'website_support';
+    } else if (mHits > wHits && mHits > 0) {
+      resolvedDomain = 'music_insights';
+    }
+  }
+
+  if (resolvedDomain === 'clarification') {
+    return {
+      query,
+      answer:
+        'Mình chưa rõ bạn muốn xem **số liệu nghe nhạc trong Chế độ Xem thử** hay tìm hiểu **cách hệ thống MusicTrack hoạt động**. Bạn hãy chọn một hướng gợi ý bên dưới nhé.',
+      active_mode: mode,
+      resolved_domain: 'clarification',
+      needs_clarification: true,
+      clarification_options: [
+        {
+          mode: 'music_insights',
+          label: 'Xem Dữ liệu Âm nhạc (Demo)',
+          query: `Tổng kết số liệu và thói quen nghe nhạc của tôi trong ${period?.label || 'kỳ này'}`,
+        },
+        {
+          mode: 'website_support',
+          label: 'Hỏi về Cách hoạt động Website',
+          query: 'Giải thích các tính năng chính và cơ chế bảo vệ dữ liệu trên MusicTrack',
+        },
+      ],
+      scope: {
+        label: 'Cần làm rõ ý định',
+        source: 'clarification',
+        note: 'Chọn một miền tri thức để có câu trả lời chính xác.',
+      },
+      evidence: [],
+      topics: [],
+      meta: {
+        provider_used: 'demo_intent_router',
+        model_name: 'demo_clarification',
+        is_fallback: false,
+        tools_used: ['intent_router'],
+        session_turns: priorTurnsCount,
+        memory_policy: 'Dữ liệu hội thoại mô phỏng trong Chế độ Xem thử (không gửi lên máy chủ).',
+      },
+    };
+  }
+
+  if (resolvedDomain === 'website_support') {
+    let answer =
+      'MusicTrack tự động đồng bộ lịch sử phát gần nhất từ Spotify, chuẩn hóa theo múi giờ hiện tại của bạn và tổng hợp thành các biểu đồ xu hướng, ma trận khung giờ, chỉ số Audio Features cùng bộ gợi ý tương đồng KNN.';
+    let topicTitle = 'Hướng dẫn sử dụng & Tổng quan MusicTrack';
+    let topicCat = 'Tài liệu sản phẩm';
+
+    if (norm.includes('trung') || norm.includes('dong bo') || norm.includes('scrobble')) {
+      answer =
+        'Hệ thống gắn dấu mốc thời gian chính xác đến từng bản ghi phát (`user + played_at`) nên dù bạn nghe lại cùng một bài hát nhiều lần ở các thời điểm khác nhau vẫn được đếm đầy đủ, đồng thời loại bỏ hoàn toàn bản ghi trùng nếu đồng bộ lặp lại.';
+      topicTitle = 'Đồng bộ lịch sử nghe nhạc (Auto-Scrobble)';
+      topicCat = 'Đồng bộ dữ liệu';
+    } else if (norm.includes('bao mat') || norm.includes('rieng tu') || norm.includes('token')) {
+      answer =
+        'Mã truy cập Spotify được mã hóa đối xứng trước khi lưu và không bao giờ trả trực tiếp ra trình duyệt. Toàn bộ API dữ liệu cá nhân đều kiểm tra xác thực người dùng ở phía máy chủ và cô lập hoàn toàn giữa các tài khoản.';
+      topicTitle = 'Xác thực Spotify & Bảo mật tài khoản';
+      topicCat = 'Tài khoản & Bảo mật';
+    } else if (norm.includes('knn') || norm.includes('goi y') || norm.includes('yeu to')) {
+      answer =
+        'Bộ gợi ý bài hát dùng thuật toán KNN có trọng số trên vector 5 đặc trưng âm thanh gồm độ dễ nhảy (Danceability), năng lượng (Energy), cảm xúc tích cực (Valence), chất mộc (Acousticness) và nhịp độ chuẩn hóa (Tempo) để đo mức độ tương đồng giữa các bài hát.';
+      topicTitle = 'Hệ thống Gợi ý Bài hát Tương đồng (KNN)';
+      topicCat = 'Gợi ý âm nhạc';
+    }
+
+    return {
+      query,
+      answer,
+      active_mode: mode,
+      resolved_domain: 'website_support',
+      needs_clarification: false,
+      clarification_options: [],
+      scope: {
+        label: 'Tài liệu Website MusicTrack (Demo)',
+        source: 'website_docs',
+        note: 'Tóm tắt hướng dẫn sử dụng sản phẩm trong Chế độ Xem thử.',
+      },
+      evidence: [],
+      topics: [
+        {
+          id: 'demo-topic-1',
+          title: topicTitle,
+          category: topicCat,
+        },
+      ],
+      meta: {
+        provider_used: 'demo_docs_guide',
+        model_name: 'demo_website_support',
+        is_fallback: false,
+        tools_used: ['website_docs_demo'],
+        session_turns: priorTurnsCount + 1,
+        memory_policy: 'Dữ liệu hội thoại mô phỏng trong Chế độ Xem thử (không gửi lên máy chủ).',
+      },
+    };
+  }
+
+  const bundle = getDemoSnapshotForPeriod(period ?? null, periodType);
+  const label = period?.label || 'Tuần này';
+  const totalPlays = bundle.summary.total_plays;
+  const durationLabel = formatListeningDuration(bundle.summary.total_duration_ms, bundle.summary.total_hours);
+
+  if (totalPlays === 0) {
+    return {
+      query,
+      answer: `Trong kỳ **${label}** (Chế độ Xem thử), không có lượt phát nào được ghi nhận (0 lượt phát). Bạn có thể chọn một kỳ khác có dữ liệu để xem phân tích chi tiết hơn.`,
+      active_mode: mode,
+      resolved_domain: 'music_insights',
+      needs_clarification: false,
+      clarification_options: [],
+      scope: {
+        label,
+        start_date: period?.start_date || null,
+        end_date: period?.end_date || null,
+        source: 'dashboard_period',
+        note: `Đồng bộ với kỳ đang chọn trên Dashboard Demo (${label}).`,
+      },
+      evidence: [
+        {
+          label: 'Lượt phát thực tế (Demo)',
+          value: '0 lượt',
+          detail: 'Không có lượt phát trong kỳ này',
+          is_estimate: false,
+          category: 'observed',
+        },
+      ],
+      topics: [
+        {
+          id: 'demo-music-scope',
+          title: `Dữ liệu Demo kỳ: ${label}`,
+          category: 'Phân tích nghe nhạc',
+        },
+      ],
+      meta: {
+        provider_used: 'demo_music_synthesizer',
+        model_name: 'demo_snapshot_v1',
+        is_fallback: false,
+        tools_used: ['demo_period_snapshot'],
+        session_turns: priorTurnsCount + 1,
+        memory_policy: 'Dữ liệu mô phỏng đồng bộ với kỳ đang chọn trên Dashboard.',
+      },
+    };
+  }
+
+  const topTrack = bundle.topTracks[0];
+  const topArtist = bundle.topArtists[0];
+  const topGenre = bundle.genreData.genres[0];
+  const compSummary = bundle.weeklyComparison.summary;
+  const growthText =
+    compSummary.baseline_status === 'new_activity'
+      ? 'Hoạt động mới (kỳ trước: 0 lượt)'
+      : `${(compSummary.growth_percentage ?? 0) > 0 ? '+' : ''}${compSummary.growth_percentage ?? 0}% so với ${bundle.weeklyComparison.previous_label}`;
+
+  const answerParts = [
+    `Trong kỳ **${label}** (dữ liệu mẫu đồng bộ với Dashboard), bạn có **${totalPlays.toLocaleString()} lượt phát** trên ${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau và ${bundle.summary.unique_artists_count} nghệ sĩ. Thời lượng ước tính khoảng **${durationLabel}**.`,
+    `- Xu hướng kỳ này: **${growthText}** (cao điểm tại ${compSummary.peak_label} với ${compSummary.peak_plays} lượt).`,
+    topTrack
+      ? `- Bài hát dẫn đầu: **${topTrack.name}** (${topTrack.artists.join(', ')}) với ${topTrack.play_count} lượt; nghệ sĩ nghe nhiều nhất là **${topArtist?.name || '-'}** (${topArtist?.play_count || 0} lượt).`
+      : '',
+    topGenre
+      ? `- Thể loại nổi bật theo bộ phân loại của MusicTrack: **${topGenre.name}** (${topGenre.percentage}%).`
+      : '',
+  ].filter(Boolean);
+
+  const evidence: AssistantEvidenceItem[] = [
+    {
+      label: 'Lượt phát (Demo)',
+      value: `${totalPlays.toLocaleString()} lượt`,
+      detail: `${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau`,
+      is_estimate: false,
+      category: 'observed',
+    },
+    {
+      label: 'Thời lượng ước tính',
+      value: durationLabel,
+      detail: 'Tổng độ dài chuẩn các bài hát mẫu',
+      is_estimate: true,
+      category: 'estimate',
+    },
+    {
+      label: 'So sánh kỳ trước',
+      value: growthText,
+      detail: `${compSummary.peak_label} (${compSummary.peak_plays} lượt)`,
+      is_estimate: false,
+      category: 'calculated',
+    },
+  ];
+
+  return {
+    query,
+    answer: answerParts.join('\n\n'),
+    active_mode: mode,
+    resolved_domain: 'music_insights',
+    needs_clarification: false,
+    clarification_options: [],
+    scope: {
+      label,
+      start_date: period?.start_date || null,
+      end_date: period?.end_date || null,
+      source: 'dashboard_period',
+      note: `Đồng bộ với kỳ đang chọn trên Dashboard Demo (${label}).`,
+    },
+    evidence,
+    topics: [
+      {
+        id: 'demo-music-scope',
+        title: `Dữ liệu Demo kỳ: ${label}`,
+        category: 'Phân tích nghe nhạc',
+      },
+    ],
+    meta: {
+      provider_used: 'demo_music_synthesizer',
+      model_name: 'demo_snapshot_v1',
+      is_fallback: false,
+      tools_used: ['demo_period_snapshot'],
+      session_turns: priorTurnsCount + 1,
+      memory_policy: 'Dữ liệu mô phỏng đồng bộ với kỳ đang chọn trên Dashboard.',
     },
   };
 }

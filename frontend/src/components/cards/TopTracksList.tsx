@@ -70,6 +70,10 @@ export const TopTracksList: React.FC<TopTracksListProps> = ({
                     <img
                       src={track.album_image_url}
                       alt={track.name}
+                      width={44}
+                      height={44}
+                      loading="lazy"
+                      decoding="async"
                       className="w-11 h-11 rounded-lg object-cover border border-slate-800 shrink-0"
                     />
                   ) : (

@@ -73,6 +73,9 @@ export const RecommendationModal: React.FC<RecommendationModalProps> = ({
                 <img
                   src={data.seed_track.image_url}
                   alt={data.seed_track.name}
+                  width={48}
+                  height={48}
+                  decoding="async"
                   className="w-12 h-12 rounded-lg object-cover shrink-0"
                 />
               ) : (
@@ -108,6 +111,10 @@ export const RecommendationModal: React.FC<RecommendationModalProps> = ({
                         <img
                           src={rec.image_url}
                           alt={rec.name}
+                          width={40}
+                          height={40}
+                          loading="lazy"
+                          decoding="async"
                           className="w-10 h-10 rounded-lg object-cover shrink-0"
                         />
                       ) : (

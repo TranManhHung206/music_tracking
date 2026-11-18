@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import {
   Headphones,
   Clock,
@@ -43,8 +43,17 @@ import { TopTracksList } from './components/cards/TopTracksList';
 import { TopArtistsList } from './components/cards/TopArtistsList';
 import { TopAlbumsList } from './components/cards/TopAlbumsList';
 import { RecentScrobblesList } from './components/cards/RecentScrobblesList';
-import { RecommendationModal } from './components/cards/RecommendationModal';
-import { ShareableCard } from './components/cards/ShareableCard';
+
+const RecommendationModal = lazy(() =>
+  import('./components/cards/RecommendationModal').then((m) => ({
+    default: m.RecommendationModal,
+  })),
+);
+const ShareableCard = lazy(() =>
+  import('./components/cards/ShareableCard').then((m) => ({
+    default: m.ShareableCard,
+  })),
+);
 
 export function App() {
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -646,7 +655,14 @@ export function App() {
 
             {/* 9. Trợ lý Hỗ trợ Người dùng ở vị trí cố định cuối Dashboard */}
             <section>
-              <CodebaseAssistantSection onAddToast={addToast} isAdmin={Boolean(user?.is_staff)} />
+              <CodebaseAssistantSection
+                key={isDemoMode ? 'demo-assistant' : `auth-assistant-${user?.id ?? 'anon'}`}
+                onAddToast={addToast}
+                isAdmin={Boolean(user?.is_staff)}
+                selectedPeriod={selectedPeriod}
+                periodType={periodType}
+                isDemoMode={isDemoMode}
+              />
             </section>
           </main>
         )}
@@ -660,63 +676,83 @@ export function App() {
         </div>
       </footer>
 
-      {/* Modal Xuất Thẻ Chia Sẻ */}
-      <ShareableCard
-        userName={user?.display_name || user?.username || 'Thính giả Demo'}
-        avatarUrl={user?.profile_image_url || undefined}
-        personaTitle={persona?.persona_title || 'Người Khám Phá Âm Nhạc'}
-        tagline={persona?.tagline || 'Âm nhạc phản chiếu tâm hồn và nhịp sống của riêng bạn.'}
-        topArtists={topArtists.map((a) => a.name)}
-        topGenres={genreData.genres.map((g) => g.name)}
-        period={selectedPeriod ? selectedPeriod.label : 'Kỳ thống kê'}
-        periodType={periodType}
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        totalPlays={summary.total_plays}
-        totalHours={summary.total_hours}
-        topGenre={genreData.genres[0]?.name}
-        topTrack={
-          topTracks[0]
-            ? {
-                name: topTracks[0].name,
-                artist: Array.isArray(topTracks[0].artists)
-                  ? topTracks[0].artists.join(', ')
-                  : 'Nghệ sĩ',
-                playCount: topTracks[0].play_count,
-                imageUrl: topTracks[0].album_image_url,
-              }
-            : undefined
-        }
-        topArtist={
-          topArtists[0]
-            ? {
-                name: topArtists[0].name,
-                playCount: topArtists[0].play_count,
-                imageUrl: topArtists[0].image_url,
-              }
-            : undefined
-        }
-        topAlbum={
-          topAlbums[0]
-            ? {
-                name: topAlbums[0].name,
-                artist: Array.isArray(topAlbums[0].artists)
-                  ? topAlbums[0].artists.join(', ')
-                  : 'Nhiều nghệ sĩ',
-                playCount: topAlbums[0].play_count,
-                imageUrl: topAlbums[0].image_url,
-              }
-            : undefined
-        }
-      />
+      {/* Modal Xuất Thẻ Chia Sẻ (Lazy loaded) */}
+      {isShareModalOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+              <div className="w-8 h-8 border-2 border-spotify-green border-t-transparent rounded-full animate-spin" />
+            </div>
+          }
+        >
+          <ShareableCard
+            userName={user?.display_name || user?.username || 'Thính giả Demo'}
+            avatarUrl={user?.profile_image_url || undefined}
+            personaTitle={persona?.persona_title || 'Người Khám Phá Âm Nhạc'}
+            tagline={persona?.tagline || 'Âm nhạc phản chiếu tâm hồn và nhịp sống của riêng bạn.'}
+            topArtists={topArtists.map((a) => a.name)}
+            topGenres={genreData.genres.map((g) => g.name)}
+            period={selectedPeriod ? selectedPeriod.label : 'Kỳ thống kê'}
+            periodType={periodType}
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            totalPlays={summary.total_plays}
+            totalHours={summary.total_hours}
+            topGenre={genreData.genres[0]?.name}
+            topTrack={
+              topTracks[0]
+                ? {
+                    name: topTracks[0].name,
+                    artist: Array.isArray(topTracks[0].artists)
+                      ? topTracks[0].artists.join(', ')
+                      : 'Nghệ sĩ',
+                    playCount: topTracks[0].play_count,
+                    imageUrl: topTracks[0].album_image_url,
+                  }
+                : undefined
+            }
+            topArtist={
+              topArtists[0]
+                ? {
+                    name: topArtists[0].name,
+                    playCount: topArtists[0].play_count,
+                    imageUrl: topArtists[0].image_url,
+                  }
+                : undefined
+            }
+            topAlbum={
+              topAlbums[0]
+                ? {
+                    name: topAlbums[0].name,
+                    artist: Array.isArray(topAlbums[0].artists)
+                      ? topAlbums[0].artists.join(', ')
+                      : 'Nhiều nghệ sĩ',
+                    playCount: topAlbums[0].play_count,
+                    imageUrl: topAlbums[0].image_url,
+                  }
+                : undefined
+            }
+          />
+        </Suspense>
+      )}
 
-      {/* Modal Gợi Ý Bài Hát Tương Đồng */}
-      <RecommendationModal
-        isOpen={isRecModalOpen}
-        onClose={() => setIsRecModalOpen(false)}
-        data={recData}
-        isLoading={isLoadingRecs}
-      />
+      {/* Modal Gợi Ý Bài Hát Tương Đồng (Lazy loaded) */}
+      {isRecModalOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+              <div className="w-8 h-8 border-2 border-spotify-green border-t-transparent rounded-full animate-spin" />
+            </div>
+          }
+        >
+          <RecommendationModal
+            isOpen={isRecModalOpen}
+            onClose={() => setIsRecModalOpen(false)}
+            data={recData}
+            isLoading={isLoadingRecs}
+          />
+        </Suspense>
+      )}
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>

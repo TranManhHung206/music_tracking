@@ -22,6 +22,7 @@ from .facts_agent import (
     generate_heuristic_facts,
 )
 from .rag.service import get_rag_service, CodebaseRAGService
+from .assistant.service import get_assistant_service, HybridAssistantService
 
 __all__ = [
     'generate_and_save_persona',
@@ -37,5 +38,7 @@ __all__ = [
     'generate_heuristic_facts',
     'get_rag_service',
     'CodebaseRAGService',
+    'get_assistant_service',
+    'HybridAssistantService',
 ]
 

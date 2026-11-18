@@ -69,7 +69,7 @@ export const CalendarPeriodSelector: React.FC<CalendarPeriodSelectorProps> = ({
         Khung thời gian:
       </span>
 
-      <SegmentedControl
+      <SegmentedControl<CalendarPeriodType>
         options={PERIOD_TABS}
         value={periodType}
         onChange={(nextType) => {

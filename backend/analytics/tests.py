@@ -647,3 +647,115 @@ class Phase1AnalyticsCorrectnessTests(APITestCase):
         self.assertEqual(summary["total_plays"], 3)
         self.assertEqual(summary["unique_tracks_count"], 2)
 
+    def test_analytics_n_plus_one_query_budgets(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from analytics.services.calculations import (
+            get_genre_distribution,
+            get_top_albums,
+            get_top_artists,
+            get_top_tracks,
+        )
+        from analytics.services.filters import get_calendar_periods
+
+        now = timezone.now()
+        for idx in range(8):
+            art = Artist.objects.create(
+                spotify_id=f"qbud_art_{idx}",
+                name=f"Nghệ sĩ Việt {idx}" if idx % 2 == 0 else "Dua Lipa" if idx == 1 else f"Indie Artist {idx}",
+                image_url=None if idx >= 4 else f"https://img.local/art_{idx}.jpg",
+            )
+            alb = Album.objects.create(
+                spotify_id=f"qbud_alb_{idx}",
+                name=f"Album {idx}",
+                image_url=f"https://img.local/alb_{idx}.jpg",
+            )
+            if idx < 5:
+                alb.artists.add(art)
+            trk = Track.objects.create(
+                spotify_id=f"qbud_trk_{idx}",
+                name=f"Bài hát {idx}" if idx % 2 == 0 else f"English Song {idx}",
+                duration_ms=200000,
+                album=alb,
+                energy=0.5,
+                acousticness=0.2,
+                danceability=0.5,
+                tempo=115.0,
+            )
+            trk.artists.add(art)
+            for play_idx in range(idx + 1):
+                ListeningHistory.objects.create(
+                    user=self.user,
+                    track=trk,
+                    played_at=now - timedelta(hours=play_idx + 1, days=idx),
+                )
+
+        start_dt = now - timedelta(days=30)
+        end_dt = now + timedelta(days=1)
+
+        with self.assertNumQueries(2):
+            tracks = get_top_tracks(self.user, start_dt, end_dt, limit=8)
+        self.assertEqual(len(tracks), 8)
+        self.assertTrue(all(len(item["artists"]) == 1 for item in tracks))
+
+        with self.assertNumQueries(3):
+            artists = get_top_artists(self.user, start_dt, end_dt, limit=8)
+        self.assertEqual(len(artists), 8)
+        self.assertTrue(all(item["image_url"] for item in artists))
+
+        with self.assertNumQueries(3):
+            albums = get_top_albums(self.user, start_dt, end_dt, limit=8)
+        self.assertEqual(len(albums), 8)
+        self.assertTrue(all(len(item["artists"]) == 1 for item in albums))
+
+        with self.assertNumQueries(3):
+            genres = get_genre_distribution(self.user, start_dt, end_dt)
+        self.assertEqual(genres["total_plays"], sum(range(1, 9)))
+
+        with self.assertNumQueries(1):
+            week_periods = get_calendar_periods(self.user, "week", 12)
+        with self.assertNumQueries(1):
+            month_periods = get_calendar_periods(self.user, "month", 12)
+        with self.assertNumQueries(1):
+            year_periods = get_calendar_periods(self.user, "year", 5)
+        self.assertEqual(len(week_periods), 12)
+        self.assertEqual(len(month_periods), 12)
+        self.assertEqual(len(year_periods), 5)
+        self.assertEqual(year_periods[0]["play_count"], sum(range(1, 9)))
+
+    def test_calendar_periods_timezone_boundary_parity(self):
+        from datetime import datetime, time, timedelta
+        from zoneinfo import ZoneInfo
+        from django.utils import timezone
+        from analytics.services.filters import get_calendar_periods
+
+        vn_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+        timezone.activate(vn_tz)
+        try:
+            today = timezone.localdate()
+            monday = today - timedelta(days=today.weekday())
+            trk = Track.objects.create(spotify_id="tz_trk_1", name="TZ Track", duration_ms=180000)
+
+            in_curr_week_early = timezone.make_aware(datetime.combine(monday, time(0, 5)), vn_tz)
+            prev_sunday_late = in_curr_week_early - timedelta(minutes=10)
+            ListeningHistory.objects.create(user=self.user, track=trk, played_at=in_curr_week_early)
+            ListeningHistory.objects.create(user=self.user, track=trk, played_at=prev_sunday_late)
+
+            periods = get_calendar_periods(self.user, "week", 4)
+            self.assertEqual(periods[0]["play_count"], 1)
+            self.assertEqual(periods[1]["play_count"], 1)
+        finally:
+            timezone.deactivate()
+
+    def test_artist_set_matcher_preserves_genre_accuracy(self):
+        from types import SimpleNamespace
+        from analytics.services.calculations import classify_artist_genres
+
+        pop_dsp = SimpleNamespace(energy=0.68, acousticness=0.15, danceability=0.68, tempo=108.0)
+        self.assertEqual(classify_artist_genres("Rosé", "APT.", track=pop_dsp), "K-Pop")
+        self.assertEqual(classify_artist_genres("Vũ.", "Lạ Lùng", track=pop_dsp), "V-Pop")
+        self.assertEqual(classify_artist_genres("Sơn Tùng M-TP", "Lạc Trôi", track=pop_dsp), "V-Pop")
+        self.assertEqual(classify_artist_genres("Alan Walker", "Faded", track=pop_dsp), "EDM / Electronic")
+        self.assertEqual(classify_artist_genres("Dua Lipa", "Levitating", track=pop_dsp), "US-UK / Pop")
+
+
