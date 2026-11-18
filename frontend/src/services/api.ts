@@ -49,6 +49,15 @@ export class ApiError extends Error {
   }
 }
 
+export function isRequestCanceled(err: unknown): boolean {
+  if (axios.isCancel(err)) return true;
+  if (err && typeof err === 'object') {
+    const obj = err as { name?: string; code?: string };
+    return obj.name === 'AbortError' || obj.name === 'CanceledError' || obj.code === 'ERR_CANCELED';
+  }
+  return false;
+}
+
 function toApiError(err: unknown, fallbackMessage: string): ApiError {
   if (err instanceof ApiError) return err;
   if (axios.isAxiosError(err)) {
@@ -230,14 +239,14 @@ export const MOCK_MONTH_CALENDAR: MonthHeatmapData = {
   total_days: 31,
   total_plays: 248,
   peak_day: '2026-10-10',
-  peak_plays: 28,
-  active_days: 25,
-  max_density: 28,
+  peak_plays: 22,
+  active_days: 31,
+  max_density: 22,
   days: Array.from({ length: 31 }, (_, i) => {
     const dayNum = i + 1;
     const dateStr = `2026-10-${dayNum.toString().padStart(2, '0')}`;
     const weekday = ((4 + i - 1) % 7) + 1;
-    const count = (dayNum % 7 === 0 || dayNum % 6 === 0) ? Math.floor(Math.random() * 15) + 8 : Math.floor(Math.random() * 8) + 1;
+    const count = dayNum % 7 === 0 || dayNum % 6 === 0 ? 12 + (i % 9) : 3 + ((i * 2) % 6);
     return {
       date: dateStr,
       day_number: dayNum,
@@ -254,12 +263,12 @@ export const MOCK_YEAR_CALENDAR: YearHeatmapData = {
   total_days: 371,
   total_plays: 2840,
   peak_day: '2026-06-18',
-  peak_plays: 45,
+  peak_plays: 20,
   active_days: 280,
   longest_streak: 18,
   top_month: 10,
   top_month_plays: 412,
-  max_density: 45,
+  max_density: 20,
   months_header: [
     { month: 1, label: 'T1', start_week: 0 },
     { month: 2, label: 'T2', start_week: 4 },
@@ -277,7 +286,7 @@ export const MOCK_YEAR_CALENDAR: YearHeatmapData = {
   days: Array.from({ length: 53 * 7 }, (_, i) => {
     const weekIndex = Math.floor(i / 7);
     const dayOfWeek = (i % 7) + 1;
-    const count = Math.random() > 0.3 ? Math.floor(Math.random() * 20) + 1 : 0;
+    const count = i % 10 === 0 ? 0 : ((i * 3 + 5) % 18) + 1;
     return {
       date: `2026-W${weekIndex + 1}-${dayOfWeek}`,
       month: Math.min(12, Math.floor(weekIndex / 4.4) + 1),
@@ -301,11 +310,11 @@ export const MOCK_HEATMAP: HeatmapData = {
     const hour = i % 24;
     let count = 0;
     if (hour >= 20 && hour <= 23) {
-      count = Math.floor(Math.random() * 15) + 4;
+      count = ((day * 3 + hour) % 12) + 4;
     } else if (hour >= 8 && hour <= 18) {
-      count = Math.floor(Math.random() * 8);
+      count = (day + hour) % 8;
     } else if (hour >= 0 && hour <= 2) {
-      count = Math.floor(Math.random() * 10) + 2;
+      count = ((day + hour) % 6) + 2;
     }
     return { day_of_week: day, hour, count };
   }),
@@ -600,7 +609,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: formatISODate(mon),
       end_date: formatISODate(sun),
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 311 : i === 1 ? 250 : 0,
     });
   }
 
@@ -620,7 +629,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: `${y}-${mStr}-01`,
       end_date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 685 : i === 1 ? 540 : 0,
     });
   }
 
@@ -637,7 +646,7 @@ export function getDynamicMockCalendarPeriods(): Record<CalendarPeriodType, Cale
       start_date: `${y}-01-01`,
       end_date: `${y}-12-31`,
       is_current: isCurr,
-      play_count: isCurr ? 222 : 0,
+      play_count: i === 0 ? 2840 : i === 1 ? 2150 : 0,
     });
   }
 
@@ -736,9 +745,9 @@ export const api = {
     }
   },
 
-  async getListeningHistory(limit: number = 20): Promise<ListeningHistoryRecord[]> {
+  async getListeningHistory(limit: number = 20, signal?: AbortSignal): Promise<ListeningHistoryRecord[]> {
     try {
-      const res = await apiClient.get(`/api/tracker/history/?limit=${limit}`);
+      const res = await apiClient.get(`/api/tracker/history/?limit=${limit}`, { signal });
       if (Array.isArray(res.data)) {
         return res.data;
       }
@@ -747,126 +756,146 @@ export const api = {
       }
       return [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải nhật ký nghe nhạc gần đây.');
     }
   },
 
   // Analytics Calendar Periods
-  async getAvailablePeriods(periodType: CalendarPeriodType = 'week', limit: number = 12): Promise<CalendarPeriodItem[]> {
+  async getAvailablePeriods(
+    periodType: CalendarPeriodType = 'week',
+    limit: number = 12,
+    signal?: AbortSignal
+  ): Promise<CalendarPeriodItem[]> {
     try {
-      const res = await apiClient.get(`/api/analytics/periods/?period_type=${periodType}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/periods/?period_type=${periodType}&limit=${limit}`, { signal });
       if (res.data && Array.isArray(res.data.periods)) {
         return res.data.periods;
       }
       return [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách kỳ thống kê.');
     }
   },
 
   // Analytics
-  async getSummary(filter?: TimeFilterInput): Promise<SummaryStats> {
+  async getSummary(filter?: TimeFilterInput, signal?: AbortSignal): Promise<SummaryStats> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/summary/?${params}`);
+      const res = await apiClient.get(`/api/analytics/summary/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải số liệu tổng quan.');
     }
   },
 
-  async getTopTracks(filter?: TimeFilterInput, limit: number = 5): Promise<TopTrack[]> {
+  async getTopTracks(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopTrack[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.tracks) ? res.data.tracks : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top bài hát.');
     }
   },
 
-  async getTopArtists(filter?: TimeFilterInput, limit: number = 5): Promise<TopArtist[]> {
+  async getTopArtists(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopArtist[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.artists) ? res.data.artists : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top nghệ sĩ.');
     }
   },
 
-  async getTopAlbums(filter?: TimeFilterInput, limit: number = 5): Promise<TopAlbum[]> {
+  async getTopAlbums(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopAlbum[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.albums) ? res.data.albums : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top album.');
     }
   },
 
-  async getRadar(filter?: TimeFilterInput): Promise<RadarData> {
+  async getRadar(filter?: TimeFilterInput, signal?: AbortSignal): Promise<RadarData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/radar/?${params}`);
+      const res = await apiClient.get(`/api/analytics/radar/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải biểu đồ đặc trưng âm thanh.');
     }
   },
 
-  async getHeatmap(filter?: TimeFilterInput, periodType?: string): Promise<HeatmapData> {
+  async getHeatmap(filter?: TimeFilterInput, periodType?: string, signal?: AbortSignal): Promise<HeatmapData> {
     const params = buildTimeParams(filter);
     const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`);
+      const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải bản đồ nhiệt nghe nhạc.');
     }
   },
 
-  async getBarChartRace(filter?: TimeFilterInput): Promise<BarChartRaceData> {
+  async getBarChartRace(filter?: TimeFilterInput, signal?: AbortSignal): Promise<BarChartRaceData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`);
+      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải dữ liệu Bar Chart Race.');
     }
   },
 
-  async getWeeklyComparison(filter?: TimeFilterInput, periodType?: CalendarPeriodType): Promise<WeeklyComparisonData> {
+  async getWeeklyComparison(
+    filter?: TimeFilterInput,
+    periodType?: CalendarPeriodType,
+    signal?: AbortSignal
+  ): Promise<WeeklyComparisonData> {
     const params = buildTimeParams(filter);
     const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${fullParams}`);
+      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${fullParams}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải dữ liệu so sánh xu hướng.');
     }
   },
 
-  async getGenreDistribution(filter?: TimeFilterInput): Promise<GenreDistributionData> {
+  async getGenreDistribution(filter?: TimeFilterInput, signal?: AbortSignal): Promise<GenreDistributionData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/genres/?${params}`);
+      const res = await apiClient.get(`/api/analytics/genres/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải phân bố thể loại âm nhạc.');
     }
   },
 
   // AI Insights
-  async getLatestPersona(period: string = 'monthly'): Promise<AIMusicPersona | null> {
+  async getLatestPersona(period: string = 'monthly', signal?: AbortSignal): Promise<AIMusicPersona | null> {
     try {
-      const res = await apiClient.get(`/api/ai/persona/latest/?period_type=${period}`);
+      const res = await apiClient.get(`/api/ai/persona/latest/?period_type=${period}`, { signal });
       const data = res.data;
       if (!data || typeof data !== 'object' || !data.persona_title || !data.mood_distribution) {
         return null;
       }
       return data as AIMusicPersona;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải hồ sơ AI Music Persona.');
     }
   },
@@ -889,13 +918,19 @@ export const api = {
     }
   },
 
-  async getMusicFacts(period: string = 'week', forceRefresh: boolean = false, trigger: boolean = false): Promise<MusicFactsResponse> {
+  async getMusicFacts(
+    period: string = 'week',
+    forceRefresh: boolean = false,
+    trigger: boolean = false,
+    signal?: AbortSignal
+  ): Promise<MusicFactsResponse> {
     try {
       const refreshParam = forceRefresh ? '&refresh=true' : '';
       const triggerParam = trigger ? '&trigger=true' : '';
-      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`);
+      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải phân tích từ AI Music Detective.');
     }
   },

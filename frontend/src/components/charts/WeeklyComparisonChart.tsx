@@ -15,10 +15,16 @@ import type {
   ComparisonSeriesPoint,
   CalendarPeriodType,
 } from '../../types/analytics';
+import { Card } from '../ui/Card';
+import { ChartCardSkeleton } from '../ui/Skeleton';
+import { SectionEmptyState, SectionErrorState } from '../ui/SectionState';
 
 interface WeeklyComparisonChartProps {
   data: WeeklyComparisonData;
   periodType?: CalendarPeriodType;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 interface CustomTooltipProps {
@@ -43,19 +49,19 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
     const diff = point.diff;
 
     return (
-      <div className="bg-[#0B0F17]/95 border border-[#1E293B] rounded-xl p-3 shadow-2xl backdrop-blur-md min-w-[190px]">
+      <div className="bg-obsidian-bg/95 border border-obsidian-border rounded-xl p-3 shadow-2xl backdrop-blur-md min-w-[190px]">
         <p className="text-xs font-bold text-white mb-2 flex items-center justify-between gap-3">
           <span>{point.label}</span>
           {point.full_label && point.full_label !== point.label && (
-            <span className="text-[11px] text-slate-400 font-normal">
+            <span className="text-[11px] text-text-muted font-normal">
               {point.full_label}
             </span>
           )}
         </p>
         <div className="space-y-1.5 text-xs">
           <div className="flex items-center justify-between gap-3">
-            <span className="flex items-center space-x-1.5 text-slate-300">
-              <span className="w-2.5 h-2.5 rounded-sm bg-[#1DB954]" />
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <span className="w-2.5 h-2.5 rounded-sm bg-spotify-green" />
               <span>{currentSeriesName}:</span>
             </span>
             <span className="font-mono font-bold text-white">
@@ -63,7 +69,7 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
             </span>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="flex items-center space-x-1.5 text-slate-400">
+            <span className="flex items-center gap-1.5 text-text-muted">
               <span className="w-2.5 h-2.5 rounded-sm bg-[#6366F1]" />
               <span>{previousSeriesName}:</span>
             </span>
@@ -72,14 +78,14 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
             </span>
           </div>
           <div className="pt-1.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
-            <span className="text-slate-400">Chênh lệch:</span>
+            <span className="text-text-muted">Chênh lệch:</span>
             <span
               className={`font-mono font-bold ${
                 diff > 0
-                  ? 'text-[#1DB954]'
+                  ? 'text-spotify-green'
                   : diff < 0
                   ? 'text-rose-400'
-                  : 'text-slate-400'
+                  : 'text-text-muted'
               }`}
             >
               {diff > 0 ? `+${diff}` : diff} lượt
@@ -95,8 +101,35 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
 export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
   data,
   periodType,
+  isLoading = false,
+  error = null,
+  onRetry,
 }) => {
   const effectiveType: CalendarPeriodType = data?.period_type || periodType || 'week';
+
+  const titleText =
+    effectiveType === 'month'
+      ? 'So Sánh Xu Hướng Nghe Nhạc Theo Tháng'
+      : effectiveType === 'year'
+      ? 'So Sánh Xu Hướng Nghe Nhạc Theo Năm'
+      : 'So Sánh Lượt Nghe Theo Tuần';
+
+  if (isLoading) {
+    return (
+      <Card variant="default" padding="md">
+        <ChartCardSkeleton heightClass="h-64" />
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card variant="default" padding="md">
+        <h3 className="text-base sm:text-lg font-bold text-white mb-3">{titleText}</h3>
+        <SectionErrorState message={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
 
   const summary = data?.summary || {
     total_current: 0,
@@ -135,13 +168,6 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
   const currentLabel = data?.current_label || data?.current_week_label || 'Kỳ đang chọn';
   const previousLabel = data?.previous_label || data?.previous_week_label || 'Kỳ trước';
 
-  const titleText =
-    effectiveType === 'month'
-      ? 'So Sánh Xu Hướng Nghe Nhạc Theo Tháng'
-      : effectiveType === 'year'
-      ? 'So Sánh Xu Hướng Nghe Nhạc Theo Năm'
-      : 'So Sánh Lượt Nghe Theo Tuần';
-
   const currentSeriesName =
     effectiveType === 'month'
       ? 'Tháng này'
@@ -160,51 +186,51 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
   const isDecline = !isNewActivity && summary.growth_percentage !== null && growthVal < 0;
 
   return (
-    <div className="w-full bg-[#131B2E] border border-[#1E293B] rounded-2xl p-6 shadow-xl">
+    <Card variant="default" padding="md">
       {/* Header & Badges */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center space-x-2">
-            <Calendar className="w-5 h-5 text-[#1DB954]" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-spotify-green shrink-0" />
             <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
               {titleText}
             </h3>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+          <p className="text-xs sm:text-sm text-text-muted mt-0.5">
             {currentLabel} so với {previousLabel}
           </p>
         </div>
 
         {/* Quick Stat Badges */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="px-3 py-1.5 rounded-xl bg-[#0B0F17]/70 border border-[#1E293B] flex items-center space-x-2">
-            <span className="text-[11px] text-slate-400">{currentSeriesName}:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="px-3 py-1.5 rounded-xl bg-obsidian-bg/70 border border-obsidian-border flex items-center gap-2">
+            <span className="text-[11px] text-text-muted">{currentSeriesName}:</span>
             <span className="text-xs font-mono font-bold text-white">
-              {totalCurrent}
+              {totalCurrent} lượt
             </span>
           </div>
 
           {isNewActivity ? (
-            <div className="px-3 py-1.5 rounded-xl border bg-emerald-950/40 border-emerald-500/30 text-[#1DB954] flex items-center space-x-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
+            <div className="px-3 py-1.5 rounded-xl border bg-emerald-950/40 border-emerald-500/30 text-spotify-green flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
               <span className="text-xs font-bold">Hoạt động mới</span>
             </div>
           ) : (
             <div
-              className={`px-3 py-1.5 rounded-xl border flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 ${
                 isGrowth
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-[#1DB954]'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-spotify-green'
                   : isDecline
                   ? 'bg-rose-950/40 border-rose-500/30 text-rose-400'
-                  : 'bg-slate-900 border-slate-700 text-slate-400'
+                  : 'bg-slate-900 border-slate-700 text-slate-300'
               }`}
             >
               {isGrowth ? (
-                <TrendingUp className="w-3.5 h-3.5" />
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
               ) : isDecline ? (
-                <TrendingDown className="w-3.5 h-3.5" />
+                <TrendingDown className="w-3.5 h-3.5 shrink-0" />
               ) : (
-                <Minus className="w-3.5 h-3.5" />
+                <Minus className="w-3.5 h-3.5 shrink-0" />
               )}
               <span className="text-xs font-mono font-bold">
                 {growthVal > 0 ? `+${growthVal}%` : `${growthVal}%`}
@@ -213,9 +239,9 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
           )}
 
           {peakPlays > 0 && peakLabel && (
-            <div className="px-3 py-1.5 rounded-xl bg-[#0B0F17]/70 border border-[#1E293B] flex items-center space-x-1.5 text-amber-400">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-xs text-slate-300">
+            <div className="px-3 py-1.5 rounded-xl bg-obsidian-bg/70 border border-obsidian-border flex items-center gap-1.5 text-amber-400">
+              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="text-xs text-slate-200">
                 Cao điểm: <strong className="text-white">{peakLabel}</strong> ({peakPlays} lượt)
               </span>
             </div>
@@ -225,26 +251,28 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
 
       {/* Chart Canvas */}
       {seriesData.length === 0 || (totalCurrent === 0 && totalPrevious === 0) ? (
-        <div className="h-64 flex flex-col items-center justify-center text-slate-500 text-xs bg-[#0B0F17]/30 rounded-xl border border-[#1E293B]/40">
-          <p>Chưa có dữ liệu lượt nghe để so sánh trong hai kỳ này.</p>
-        </div>
+        <SectionEmptyState
+          title="Chưa có dữ liệu so sánh"
+          description="Chưa có lượt nghe nào được ghi nhận trong cả kỳ hiện tại lẫn kỳ đối chiếu trước đó."
+          icon={<Calendar className="w-5 h-5" />}
+        />
       ) : (
-        <div className="w-full h-72">
+        <div className="w-full h-64 sm:h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={seriesData}
-              margin={{ top: 10, right: 15, left: -20, bottom: 5 }}
+              margin={{ top: 10, right: 12, left: -12, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
               <XAxis
                 dataKey="short_label"
-                stroke="#64748B"
-                tick={{ fill: '#94A3B8', fontSize: 12 }}
+                stroke="#94A3B8"
+                tick={{ fill: '#94A3B8', fontSize: 11 }}
                 axisLine={{ stroke: '#334155' }}
               />
               <YAxis
-                stroke="#64748B"
-                tick={{ fill: '#94A3B8', fontSize: 12 }}
+                stroke="#94A3B8"
+                tick={{ fill: '#94A3B8', fontSize: 11 }}
                 axisLine={{ stroke: '#334155' }}
                 allowDecimals={false}
               />
@@ -259,7 +287,7 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
               <Legend
                 verticalAlign="top"
                 align="right"
-                wrapperStyle={{ paddingBottom: '16px', fontSize: '12px' }}
+                wrapperStyle={{ paddingBottom: '12px', fontSize: '12px' }}
               />
               <Bar
                 dataKey="current_plays"
@@ -279,6 +307,6 @@ export const WeeklyComparisonChart: React.FC<WeeklyComparisonChartProps> = ({
           </ResponsiveContainer>
         </div>
       )}
-    </div>
+    </Card>
   );
 };

@@ -16,15 +16,19 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col space-y-3 max-w-md w-full px-4 sm:px-0">
+    <div
+      aria-live="polite"
+      aria-atomic="true"
+      className="fixed bottom-4 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 pb-[env(safe-area-inset-bottom)] z-50 flex flex-col gap-3 sm:max-w-md sm:w-full pointer-events-none"
+    >
       {toasts.map((toast) => {
         let borderClass = 'border-slate-700';
-        let bgClass = 'bg-[#131B2E]';
+        let bgClass = 'bg-obsidian-card';
         let textClass = 'text-slate-200';
         let Icon = Info;
 
         if (toast.type === 'success') {
-          borderClass = 'border-[#1DB954]/50';
+          borderClass = 'border-spotify-green/50';
           bgClass = 'bg-[#0B1A14]';
           textClass = 'text-emerald-300';
           Icon = CheckCircle2;
@@ -43,17 +47,20 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
         return (
           <div
             key={toast.id}
-            className={`flex items-start justify-between p-4 rounded-xl border ${borderClass} ${bgClass} shadow-xl backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-2`}
+            role="status"
+            className={`pointer-events-auto flex items-start justify-between p-3.5 sm:p-4 rounded-xl border ${borderClass} ${bgClass} shadow-xl backdrop-blur-md transition-all duration-300 animate-slide-up`}
           >
-            <div className="flex items-start space-x-3">
+            <div className="flex items-start gap-3 min-w-0">
               <Icon className={`w-5 h-5 mt-0.5 shrink-0 ${textClass}`} />
-              <p className="text-xs sm:text-sm font-medium text-slate-200 leading-relaxed">
+              <p className="text-xs sm:text-sm font-medium text-slate-200 leading-relaxed break-words">
                 {toast.message}
               </p>
             </div>
             <button
+              type="button"
               onClick={() => onDismiss(toast.id)}
-              className="ml-3 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
+              aria-label="Đóng thông báo"
+              className="ml-3 min-w-[28px] min-h-[28px] rounded-lg flex items-center justify-center text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
               title="Đóng"
             >
               <X className="w-4 h-4" />

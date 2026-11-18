@@ -1,13 +1,24 @@
 @import "tailwindcss";
 
 @theme {
+  /* Core Surfaces & Borders */
   --color-obsidian-bg: #0B0F17;
   --color-obsidian-card: #131B2E;
+  --color-obsidian-elevated: #182238;
   --color-obsidian-border: #1E293B;
+
+  /* Brand & Accents */
   --color-spotify-green: #1DB954;
   --color-spotify-hover: #1ED760;
+  --color-accent-ai: #A855F7;
+  --color-accent-cyan: #06B6D4;
+
+  /* Typography & Status */
   --color-text-main: #F8FAFC;
   --color-text-muted: #94A3B8;
+  --color-status-success: #1DB954;
+  --color-status-warning: #F59E0B;
+  --color-status-error: #F43F5E;
 }
 
 :root {
@@ -16,9 +27,68 @@
 
 body {
   margin: 0;
-  background-color: #0B0F17;
-  color: #F8FAFC;
+  background-color: var(--color-obsidian-bg);
+  color: var(--color-text-main);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   min-height: 100vh;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+@keyframes mtFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mtSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: mtFadeIn 0.22s ease-out both;
+}
+
+.animate-slide-up {
+  animation: mtSlideUp 0.24s ease-out both;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,8 +1,18 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { Download, Sparkles, Music, X, Disc, Mic2, Music2, Headphones, Clock, Flame } from 'lucide-react';
+import { SegmentedControl, type SegmentedOption } from '../ui/SegmentedControl';
+import type { CalendarPeriodType } from '../../types/analytics';
+import { getListeningFrequencyLabel } from '../../utils/analyticsFormatters';
 
 export type AspectRatioType = '9:16' | '4:5' | '1:1' | '16:9';
+
+const RATIO_OPTIONS: SegmentedOption<AspectRatioType>[] = [
+  { id: '9:16', label: '9:16' },
+  { id: '4:5', label: '4:5 (3:4)' },
+  { id: '1:1', label: '1:1' },
+  { id: '16:9', label: '16:9' },
+];
 
 export interface FavoriteItemData {
   name: string;
@@ -19,6 +29,7 @@ export interface ShareableCardProps {
   topArtists: string[];
   topGenres?: string[];
   period: string;
+  periodType?: CalendarPeriodType;
   isOpen: boolean;
   onClose: () => void;
   totalPlays?: number;
@@ -100,6 +111,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
   topArtists,
   topGenres,
   period,
+  periodType = 'week',
   isOpen,
   onClose,
   totalPlays = 0,
@@ -115,6 +127,15 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [exportedDataUrl, setExportedDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -210,45 +231,46 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md animate-fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Xuất thẻ chia sẻ cá tính âm nhạc"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md animate-fade-in"
+    >
       <div className="min-h-full flex flex-col items-center justify-center p-3 sm:p-4 py-6 pb-24">
         <div className="flex flex-col items-center max-w-lg w-full">
           {/* Top Controls: Ratio Selector & Close */}
-          <div className="w-full flex items-center justify-between mb-4 px-2">
-            {/* Aspect Ratio Tabs */}
-            <div className="flex items-center space-x-1.5 p-1 rounded-xl bg-[#131B2E] border border-slate-800">
-              {(['9:16', '4:5', '1:1', '16:9'] as AspectRatioType[]).map((ratio) => (
-                <button
-                  key={ratio}
-                  onClick={() => setAspectRatio(ratio)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    aspectRatio === ratio
-                      ? 'bg-[#1DB954] text-black shadow-md shadow-[#1DB954]/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  {ratio === '4:5' ? '4:5 (3:4)' : ratio}
-                </button>
-              ))}
-            </div>
+          <div className="w-full flex items-center justify-between gap-2 mb-4 px-1">
+            <SegmentedControl
+              options={RATIO_OPTIONS}
+              value={aspectRatio}
+              onChange={setAspectRatio}
+              ariaLabel="Chọn tỷ lệ khung hình thẻ chia sẻ"
+              size="sm"
+              className="flex-wrap"
+            />
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-full bg-[#131B2E] text-slate-400 hover:text-white transition-all cursor-pointer ml-3"
+              aria-label="Đóng trình xuất thẻ chia sẻ"
+              className="min-w-[36px] min-h-[36px] p-2 rounded-full bg-obsidian-card text-slate-400 hover:text-white transition-all cursor-pointer shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
               title="Đóng"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Khung Card Dynamic Aspect Ratio */}
-          <div
-            ref={cardRef}
-            id="shareable-card-canvas"
-            className={`${getContainerStyle()} bg-gradient-to-b from-[#0F172A] via-[#131B2E] to-[#0B0F17] border-2 border-emerald-500/30 rounded-3xl ${
-              aspectRatio === '4:5' ? 'p-3 sm:p-3.5' : aspectRatio === '1:1' ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5'
-            } flex flex-col justify-between shadow-2xl relative overflow-hidden text-white transition-all duration-300`}
-          >
+          {/* Overflow-safe preview container cho 16:9 / 9:16 trên màn nhỏ */}
+          <div className="w-full overflow-x-auto pb-2 scrollbar-thin flex justify-start sm:justify-center">
+            {/* Khung Card Dynamic Aspect Ratio */}
+            <div
+              ref={cardRef}
+              id="shareable-card-canvas"
+              className={`${getContainerStyle()} shrink-0 mx-auto bg-gradient-to-b from-[#0F172A] via-[#131B2E] to-[#0B0F17] border-2 border-emerald-500/30 rounded-3xl ${
+                aspectRatio === '4:5' ? 'p-3 sm:p-3.5' : aspectRatio === '1:1' ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5'
+              } flex flex-col justify-between shadow-2xl relative overflow-hidden text-white transition-all duration-300`}
+            >
             {/* Background Neon Glow */}
             <div className="absolute -top-16 -right-16 w-44 h-44 bg-[#1DB954]/25 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-purple-600/25 rounded-full blur-3xl pointer-events-none" />
@@ -566,7 +588,9 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                         <Flame className="w-2.5 h-2.5 text-amber-400" />
                         <span>Tần suất</span>
                       </div>
-                      <span className="text-[11px] font-black text-amber-300 mt-0.5">Sôi nổi</span>
+                      <span className="text-[11px] font-black text-amber-300 mt-0.5">
+                        {getListeningFrequencyLabel(totalPlays, periodType)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -718,7 +742,9 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
                         <Flame className="w-2.5 h-2.5 text-amber-400" />
                         <span>Tần suất</span>
                       </div>
-                      <span className="text-xs font-black text-amber-300 mt-0.5">Sôi nổi</span>
+                      <span className="text-xs font-black text-amber-300 mt-0.5">
+                        {getListeningFrequencyLabel(totalPlays, periodType)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -832,6 +858,7 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
               <span className="w-1 h-4 bg-purple-400 rounded-full" />
               <span className="w-1 h-2 bg-[#1DB954] rounded-full" />
             </div>
+          </div>
           </div>
 
           {/* Action Download Buttons */}

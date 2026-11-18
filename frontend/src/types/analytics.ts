@@ -6,6 +6,7 @@ export interface SummaryStats {
   total_hours: number;
   unique_artists_count: number;
   unique_albums_count: number;
+  unique_tracks_count?: number;
   time_range: string;
 }
 

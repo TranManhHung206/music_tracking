@@ -631,3 +631,19 @@ class Phase1AnalyticsCorrectnessTests(APITestCase):
         self.assertEqual(cache.get(key_u2), {"total": 20})
         self.assertEqual(cache.get(rag_key), {"answer": "still_here"})
 
+    def test_listening_summary_distinguishes_total_plays_from_unique_tracks(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from analytics.services.calculations import get_listening_summary
+
+        tr1 = Track.objects.create(spotify_id="sum_tr_1", name="Song 1", duration_ms=180000)
+        tr2 = Track.objects.create(spotify_id="sum_tr_2", name="Song 2", duration_ms=240000)
+        now = timezone.now()
+        ListeningHistory.objects.create(user=self.user, track=tr1, played_at=now - timedelta(minutes=30))
+        ListeningHistory.objects.create(user=self.user, track=tr1, played_at=now - timedelta(minutes=20))
+        ListeningHistory.objects.create(user=self.user, track=tr2, played_at=now - timedelta(minutes=10))
+
+        summary = get_listening_summary(self.user, now - timedelta(hours=1), now)
+        self.assertEqual(summary["total_plays"], 3)
+        self.assertEqual(summary["unique_tracks_count"], 2)
+
