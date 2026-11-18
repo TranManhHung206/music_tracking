@@ -1,38 +1,56 @@
 import React from 'react';
 import { User } from 'lucide-react';
 import type { TopArtist } from '../../types/analytics';
+import { Card } from '../ui/Card';
+import { ListCardSkeleton } from '../ui/Skeleton';
+import { SectionEmptyState, SectionErrorState } from '../ui/SectionState';
 
 interface TopArtistsListProps {
   artists: TopArtist[];
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
-export const TopArtistsList: React.FC<TopArtistsListProps> = ({ artists }) => {
+export const TopArtistsList: React.FC<TopArtistsListProps> = ({
+  artists = [],
+  isLoading = false,
+  error = null,
+  onRetry,
+}) => {
+  const safeArtists = Array.isArray(artists) ? artists : [];
+
   return (
-    <div className="w-full bg-[#131B2E] border border-[#1E293B] rounded-2xl p-6 shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
-            Top Nghệ Sĩ Được Nghe Nhiều Nhất
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-400">
-            Những nghệ sĩ định hình gu thưởng thức âm nhạc của bạn
-          </p>
-        </div>
+    <Card variant="default" padding="md" className="flex flex-col">
+      <div className="mb-4">
+        <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+          Top Nghệ Sĩ Được Nghe Nhiều Nhất
+        </h3>
+        <p className="text-xs sm:text-sm text-text-muted">
+          Những nghệ sĩ định hình gu thưởng thức âm nhạc của bạn
+        </p>
       </div>
 
-      {artists.length === 0 ? (
-        <div className="py-8 text-center text-slate-500 text-xs">
-          Chưa có nghệ sĩ nào được ghi nhận trong kỳ này.
-        </div>
+      {isLoading ? (
+        <ListCardSkeleton rows={5} />
+      ) : error ? (
+        <SectionErrorState message={error} onRetry={onRetry} />
+      ) : safeArtists.length === 0 ? (
+        <SectionEmptyState
+          title="Chưa có nghệ sĩ nổi bật"
+          description="Chưa có nghệ sĩ nào được ghi nhận trong kỳ này."
+          icon={<User className="w-5 h-5" />}
+          compact
+        />
       ) : (
         <div className="space-y-3">
-          {artists.map((artist, idx) => (
+          {safeArtists.map((artist, idx) => (
             <div
               key={artist.spotify_id || idx}
-              className="flex items-center justify-between p-3 rounded-xl bg-[#0B0F17]/50 border border-[#1E293B]/60 hover:border-[#1DB954]/40 transition-all group"
+              className="flex items-center justify-between p-3 rounded-xl bg-obsidian-bg/50 border border-obsidian-border/70 hover:border-spotify-green/40 transition-all group gap-2"
             >
-              <div className="flex items-center space-x-3 min-w-0">
-                <span className="w-5 text-center font-bold text-xs text-slate-500 group-hover:text-[#1DB954]">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-5 text-center font-bold text-xs text-text-muted group-hover:text-spotify-green shrink-0">
                   #{idx + 1}
                 </span>
 
@@ -49,23 +67,23 @@ export const TopArtistsList: React.FC<TopArtistsListProps> = ({ artists }) => {
                 )}
 
                 <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-white truncate group-hover:text-[#1DB954] transition-colors leading-5">
+                  <h4 className="text-sm font-semibold text-white truncate group-hover:text-spotify-green transition-colors leading-5">
                     {artist.name}
                   </h4>
-                  <span className="text-[11px] text-slate-500 block leading-4 mt-0.5">Nghệ sĩ chính</span>
+                  <span className="text-[11px] text-text-muted block leading-4 mt-0.5">Nghệ sĩ chính</span>
                 </div>
               </div>
 
               <div className="text-right shrink-0">
-                <span className="text-xs font-mono font-bold text-[#1DB954] block leading-5">
+                <span className="text-xs font-mono font-bold text-spotify-green block leading-5">
                   {artist.play_count}
                 </span>
-                <span className="text-[10px] text-slate-500 uppercase block leading-4 mt-0.5">lượt nghe</span>
+                <span className="text-[11px] text-text-muted block leading-4">lượt nghe</span>
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 };

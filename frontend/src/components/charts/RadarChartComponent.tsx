@@ -8,7 +8,11 @@ import {
   Radar,
   Tooltip,
 } from 'recharts';
+import { AudioLines } from 'lucide-react';
 import type { AudioFeatureItem, FeaturesProvenance } from '../../types/analytics';
+import { Card } from '../ui/Card';
+import { ChartCardSkeleton } from '../ui/Skeleton';
+import { SectionEmptyState, SectionErrorState } from '../ui/SectionState';
 
 export type { AudioFeatureItem };
 
@@ -17,9 +21,11 @@ export interface RadarChartProps {
   title?: string;
   totalTracksAnalyzed?: number;
   provenance?: FeaturesProvenance;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
-// Bang anh xa ten thuoc tinh ky thuat sang thuat ngu tieng Viet de hieu
 const ATTRIBUTE_MAP: Record<string, { label: string; desc: string }> = {
   energy: { label: 'Năng Lượng', desc: 'Độ sôi động & bùng nổ' },
   danceability: { label: 'Bắt Tai', desc: 'Độ nảy & bắt nhịp khiêu vũ' },
@@ -33,10 +39,31 @@ export const RadarChartComponent: React.FC<RadarChartProps> = ({
   title = 'Âm Hưởng Âm Nhạc (Audio Features)',
   totalTracksAnalyzed,
   provenance,
+  isLoading = false,
+  error = null,
+  onRetry,
 }) => {
+  if (isLoading) {
+    return (
+      <Card variant="default" padding="md">
+        <ChartCardSkeleton heightClass="h-72" />
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card variant="default" padding="md" className="flex flex-col justify-between">
+        <div className="mb-3">
+          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">{title}</h3>
+        </div>
+        <SectionErrorState message={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
+
   const safeData = Array.isArray(data) ? data : [];
 
-  // Format du lieu voi ten nhan tieng Viet than thien (ho tro khong phan biet hoa thuong)
   const chartData = safeData.map((item) => {
     const key = (item.attribute || '').toLowerCase();
     const mappedKey = key === 'tempo' ? 'tempo_normalized' : key;
@@ -52,46 +79,39 @@ export const RadarChartComponent: React.FC<RadarChartProps> = ({
   const hasEstimates = Boolean(provenance?.has_estimates || provenance?.has_legacy_unknown);
 
   return (
-    <div className="w-full bg-[#131B2E] border border-[#1E293B] rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+    <Card variant="default" padding="md" className="flex flex-col justify-between">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">{title}</h3>
-          <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#1DB954]/10 text-[#1DB954] border border-[#1DB954]/20 font-semibold">
+          <span className="text-xs px-2.5 py-0.5 rounded-full bg-spotify-green/10 text-spotify-green border border-spotify-green/25 font-semibold shrink-0">
             {provenance && provenance.total_plays > 0
               ? `Đo trực tiếp ${provenance.measured_percentage}%`
               : 'Chuẩn Hóa 5D'}
           </span>
         </div>
-        <p className="text-xs sm:text-sm text-slate-400 mb-2">
+        <p className="text-xs sm:text-sm text-text-muted mb-2 leading-relaxed">
           {hasEstimates
-            ? 'Phân tích 5 chiều âm thanh từ Audio DSP và ước lượng bổ sung cho các bài thiếu bản nghe thử'
-            : 'Phân tích đa chiều các đặc tính âm thanh từ tín hiệu Audio DSP và siêu dữ liệu bản nhạc'}
+            ? 'Phân tích 5 chiều âm thanh từ Audio DSP và ước lượng bổ sung cho các bài thiếu bản nghe thử.'
+            : 'Phân tích đa chiều các đặc tính âm thanh từ tín hiệu Audio DSP và siêu dữ liệu bản nhạc.'}
         </p>
       </div>
 
       {isEmpty ? (
-        <div className="h-80 my-2 flex flex-col items-center justify-center text-center px-4 rounded-xl bg-[#0B0F17]/40 border border-[#1E293B]/60">
-          <p className="text-sm font-semibold text-slate-300">
-            Chưa đủ dữ liệu để phân tích âm hưởng
-          </p>
-          <p className="text-xs text-slate-500 mt-1 max-w-xs">
-            Không có lượt nghe nào được ghi nhận trong khoảng thời gian đang chọn.
-          </p>
-        </div>
+        <SectionEmptyState
+          title="Chưa đủ dữ liệu để phân tích âm hưởng"
+          description="Không có lượt nghe nào được ghi nhận trong khoảng thời gian đang chọn."
+          icon={<AudioLines className="w-5 h-5" />}
+        />
       ) : (
         <>
-          <div className="w-full h-80 my-2">
+          <div className="w-full h-72 sm:h-80 my-2">
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="82%" data={chartData}>
+              <RadarChart cx="50%" cy="50%" outerRadius="78%" data={chartData}>
                 <PolarGrid stroke="#334155" strokeDasharray="3 3" />
-                <PolarRadiusAxis
-                  domain={[0, 1]}
-                  tick={false}
-                  axisLine={false}
-                />
+                <PolarRadiusAxis domain={[0, 1]} tick={false} axisLine={false} />
                 <PolarAngleAxis
                   dataKey="displayName"
-                  tick={{ fill: '#E2E8F0', fontSize: 13, fontWeight: 600 }}
+                  tick={{ fill: '#E2E8F0', fontSize: 12, fontWeight: 600 }}
                 />
                 <Radar
                   name="Chỉ số"
@@ -111,26 +131,24 @@ export const RadarChartComponent: React.FC<RadarChartProps> = ({
                   }}
                   formatter={(value, _name, entry) => {
                     const item = entry.payload as { displayName: string; desc: string };
-                    return [
-                      `${(Number(value) * 100).toFixed(0)}%`,
-                      item.displayName,
-                    ];
+                    return [`${(Number(value) * 100).toFixed(0)}%`, item.displayName];
                   }}
                 />
               </RadarChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-3 border-t border-[#1E293B] text-[11px] text-center">
+          <div className="grid grid-cols-2 min-[420px]:grid-cols-3 sm:grid-cols-5 gap-2 pt-3 border-t border-obsidian-border text-xs text-center">
             {chartData.map((item) => (
               <div
                 key={item.attribute}
-                className="p-2 rounded-xl bg-[#0B0F17]/60 border border-slate-800/80 hover:border-[#1DB954]/40 transition-colors"
+                className="p-2 rounded-xl bg-obsidian-bg/60 border border-slate-800/80 hover:border-spotify-green/40 transition-colors"
+                title={item.desc}
               >
-                <span className="block font-semibold text-slate-300 truncate" title={item.desc}>
+                <span className="block font-semibold text-slate-200 truncate text-[11px]">
                   {item.displayName}
                 </span>
-                <span className="text-[#1DB954] font-black text-xs block mt-0.5">
+                <span className="text-spotify-green font-black text-xs block mt-0.5 font-mono">
                   {(item.score * 100).toFixed(0)}%
                 </span>
               </div>
@@ -138,6 +156,6 @@ export const RadarChartComponent: React.FC<RadarChartProps> = ({
           </div>
         </>
       )}
-    </div>
+    </Card>
   );
 };

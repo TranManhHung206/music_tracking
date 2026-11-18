@@ -49,6 +49,15 @@ export class ApiError extends Error {
   }
 }
 
+export function isRequestCanceled(err: unknown): boolean {
+  if (axios.isCancel(err)) return true;
+  if (err && typeof err === 'object') {
+    const obj = err as { name?: string; code?: string };
+    return obj.name === 'AbortError' || obj.name === 'CanceledError' || obj.code === 'ERR_CANCELED';
+  }
+  return false;
+}
+
 function toApiError(err: unknown, fallbackMessage: string): ApiError {
   if (err instanceof ApiError) return err;
   if (axios.isAxiosError(err)) {
@@ -736,9 +745,9 @@ export const api = {
     }
   },
 
-  async getListeningHistory(limit: number = 20): Promise<ListeningHistoryRecord[]> {
+  async getListeningHistory(limit: number = 20, signal?: AbortSignal): Promise<ListeningHistoryRecord[]> {
     try {
-      const res = await apiClient.get(`/api/tracker/history/?limit=${limit}`);
+      const res = await apiClient.get(`/api/tracker/history/?limit=${limit}`, { signal });
       if (Array.isArray(res.data)) {
         return res.data;
       }
@@ -747,126 +756,146 @@ export const api = {
       }
       return [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải nhật ký nghe nhạc gần đây.');
     }
   },
 
   // Analytics Calendar Periods
-  async getAvailablePeriods(periodType: CalendarPeriodType = 'week', limit: number = 12): Promise<CalendarPeriodItem[]> {
+  async getAvailablePeriods(
+    periodType: CalendarPeriodType = 'week',
+    limit: number = 12,
+    signal?: AbortSignal
+  ): Promise<CalendarPeriodItem[]> {
     try {
-      const res = await apiClient.get(`/api/analytics/periods/?period_type=${periodType}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/periods/?period_type=${periodType}&limit=${limit}`, { signal });
       if (res.data && Array.isArray(res.data.periods)) {
         return res.data.periods;
       }
       return [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách kỳ thống kê.');
     }
   },
 
   // Analytics
-  async getSummary(filter?: TimeFilterInput): Promise<SummaryStats> {
+  async getSummary(filter?: TimeFilterInput, signal?: AbortSignal): Promise<SummaryStats> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/summary/?${params}`);
+      const res = await apiClient.get(`/api/analytics/summary/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải số liệu tổng quan.');
     }
   },
 
-  async getTopTracks(filter?: TimeFilterInput, limit: number = 5): Promise<TopTrack[]> {
+  async getTopTracks(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopTrack[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-tracks/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.tracks) ? res.data.tracks : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top bài hát.');
     }
   },
 
-  async getTopArtists(filter?: TimeFilterInput, limit: number = 5): Promise<TopArtist[]> {
+  async getTopArtists(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopArtist[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-artists/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.artists) ? res.data.artists : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top nghệ sĩ.');
     }
   },
 
-  async getTopAlbums(filter?: TimeFilterInput, limit: number = 5): Promise<TopAlbum[]> {
+  async getTopAlbums(filter?: TimeFilterInput, limit: number = 5, signal?: AbortSignal): Promise<TopAlbum[]> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`);
+      const res = await apiClient.get(`/api/analytics/top-albums/?${params}&limit=${limit}`, { signal });
       return Array.isArray(res.data?.albums) ? res.data.albums : [];
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải danh sách Top album.');
     }
   },
 
-  async getRadar(filter?: TimeFilterInput): Promise<RadarData> {
+  async getRadar(filter?: TimeFilterInput, signal?: AbortSignal): Promise<RadarData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/radar/?${params}`);
+      const res = await apiClient.get(`/api/analytics/radar/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải biểu đồ đặc trưng âm thanh.');
     }
   },
 
-  async getHeatmap(filter?: TimeFilterInput, periodType?: string): Promise<HeatmapData> {
+  async getHeatmap(filter?: TimeFilterInput, periodType?: string, signal?: AbortSignal): Promise<HeatmapData> {
     const params = buildTimeParams(filter);
     const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`);
+      const res = await apiClient.get(`/api/analytics/heatmap/?${fullParams}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải bản đồ nhiệt nghe nhạc.');
     }
   },
 
-  async getBarChartRace(filter?: TimeFilterInput): Promise<BarChartRaceData> {
+  async getBarChartRace(filter?: TimeFilterInput, signal?: AbortSignal): Promise<BarChartRaceData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`);
+      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải dữ liệu Bar Chart Race.');
     }
   },
 
-  async getWeeklyComparison(filter?: TimeFilterInput, periodType?: CalendarPeriodType): Promise<WeeklyComparisonData> {
+  async getWeeklyComparison(
+    filter?: TimeFilterInput,
+    periodType?: CalendarPeriodType,
+    signal?: AbortSignal
+  ): Promise<WeeklyComparisonData> {
     const params = buildTimeParams(filter);
     const fullParams = periodType ? `${params}&period_type=${periodType}` : params;
     try {
-      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${fullParams}`);
+      const res = await apiClient.get(`/api/analytics/weekly-comparison/?${fullParams}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải dữ liệu so sánh xu hướng.');
     }
   },
 
-  async getGenreDistribution(filter?: TimeFilterInput): Promise<GenreDistributionData> {
+  async getGenreDistribution(filter?: TimeFilterInput, signal?: AbortSignal): Promise<GenreDistributionData> {
     const params = buildTimeParams(filter);
     try {
-      const res = await apiClient.get(`/api/analytics/genres/?${params}`);
+      const res = await apiClient.get(`/api/analytics/genres/?${params}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải phân bố thể loại âm nhạc.');
     }
   },
 
   // AI Insights
-  async getLatestPersona(period: string = 'monthly'): Promise<AIMusicPersona | null> {
+  async getLatestPersona(period: string = 'monthly', signal?: AbortSignal): Promise<AIMusicPersona | null> {
     try {
-      const res = await apiClient.get(`/api/ai/persona/latest/?period_type=${period}`);
+      const res = await apiClient.get(`/api/ai/persona/latest/?period_type=${period}`, { signal });
       const data = res.data;
       if (!data || typeof data !== 'object' || !data.persona_title || !data.mood_distribution) {
         return null;
       }
       return data as AIMusicPersona;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải hồ sơ AI Music Persona.');
     }
   },
@@ -889,13 +918,19 @@ export const api = {
     }
   },
 
-  async getMusicFacts(period: string = 'week', forceRefresh: boolean = false, trigger: boolean = false): Promise<MusicFactsResponse> {
+  async getMusicFacts(
+    period: string = 'week',
+    forceRefresh: boolean = false,
+    trigger: boolean = false,
+    signal?: AbortSignal
+  ): Promise<MusicFactsResponse> {
     try {
       const refreshParam = forceRefresh ? '&refresh=true' : '';
       const triggerParam = trigger ? '&trigger=true' : '';
-      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`);
+      const res = await apiClient.get(`/api/ai/facts/?period=${period}${refreshParam}${triggerParam}`, { signal });
       return res.data;
     } catch (err) {
+      if (isRequestCanceled(err)) throw err;
       throw toApiError(err, 'Không thể tải phân tích từ AI Music Detective.');
     }
   },
