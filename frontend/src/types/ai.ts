@@ -111,4 +111,89 @@ export interface CodebaseQueryPayload {
   use_cache?: boolean;
 }
 
+export type AssistantMode = 'auto' | 'music_insights' | 'website_support';
+export type AssistantResolvedDomain = 'music_insights' | 'website_support' | 'clarification';
+export type AssistantRagMode = 'baseline_dense' | 'hybrid_rrf' | 'full_cascade';
+
+export interface AssistantPeriodContext {
+  period_type?: 'week' | 'month' | 'year';
+  start_date?: string;
+  end_date?: string;
+  label?: string;
+}
+
+export interface AssistantScopeMeta {
+  label: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  source: 'dashboard_period' | 'requested_in_query' | 'rolling_window' | 'website_docs' | 'clarification';
+  note?: string;
+}
+
+export interface AssistantEvidenceItem {
+  label: string;
+  value: string;
+  detail?: string;
+  is_estimate: boolean;
+  category: 'observed' | 'calculated' | 'estimate' | 'ai_interpretation';
+}
+
+export interface AssistantTopicItem {
+  id: string;
+  title: string;
+  category: string;
+}
+
+export interface AssistantClarificationOption {
+  mode: 'music_insights' | 'website_support';
+  label: string;
+  query: string;
+}
+
+export interface AssistantResponseMeta {
+  provider_used: string;
+  model_name: string;
+  is_fallback: boolean;
+  tools_used: string[];
+  session_turns: number;
+  memory_policy: string;
+}
+
+export interface AssistantQueryPayload {
+  query: string;
+  mode?: AssistantMode;
+  session_id?: string;
+  period_context?: AssistantPeriodContext | null;
+  rag_mode?: AssistantRagMode;
+  top_k?: number;
+  use_cache?: boolean;
+}
+
+export interface AssistantQueryResponse {
+  query: string;
+  answer: string;
+  active_mode: AssistantMode;
+  resolved_domain: AssistantResolvedDomain;
+  needs_clarification: boolean;
+  clarification_options: AssistantClarificationOption[];
+  scope: AssistantScopeMeta;
+  evidence: AssistantEvidenceItem[];
+  topics: AssistantTopicItem[];
+  dev_citations?: CitationItem[];
+  dev_verification?: CodebaseQueryResponse['verification'] | null;
+  dev_metrics?: {
+    latency_ms: number;
+    retrieved_chunks_count: number;
+    rag_mode: string;
+  } | null;
+  meta: AssistantResponseMeta;
+}
+
+export interface AssistantConversationTurn {
+  id: string;
+  query: string;
+  response: AssistantQueryResponse;
+  createdAt: string;
+}
+
 

@@ -129,22 +129,6 @@ export interface HeatmapData {
   year_calendar?: YearHeatmapData;
 }
 
-export interface RankingEntry {
-  name: string;
-  plays: number;
-  cumulative_plays: number;
-}
-
-export interface TimelineFrame {
-  date: string;
-  rankings: RankingEntry[];
-}
-
-export interface BarChartRaceData {
-  metric: string;
-  timeline: TimelineFrame[];
-}
-
 export interface DayComparison {
   day_index: number;
   day_name: string;

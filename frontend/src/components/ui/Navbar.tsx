@@ -69,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onLogin}
-                className="inline-flex items-center gap-1.5 min-h-[34px] sm:min-h-[36px] px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold bg-spotify-green text-black hover:bg-spotify-hover transition-all cursor-pointer shadow-md shadow-spotify-green/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian-bg"
+                className="inline-flex items-center gap-1.5 min-h-[34px] sm:min-h-[36px] px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold bg-spotify-green text-black hover:bg-spotify-hover active:scale-[0.98] transition-all cursor-pointer shadow-md shadow-spotify-green/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian-bg"
               >
                 <CheckCircle className="w-3.5 h-3.5 shrink-0" />
                 <span className="min-[380px]:hidden">Spotify</span>
@@ -98,7 +98,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={onSync}
                 disabled={isSyncing}
                 aria-label="Đồng bộ lịch sử nghe nhạc mới nhất từ Spotify"
-                className="inline-flex items-center gap-1.5 sm:gap-2 min-h-[36px] px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium bg-obsidian-card border border-obsidian-border text-slate-200 hover:text-white hover:border-spotify-green/50 transition-all cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
+                className="inline-flex items-center gap-1.5 sm:gap-2 min-h-[36px] px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium bg-obsidian-card border border-obsidian-border text-slate-200 hover:text-white hover:border-spotify-green/50 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
                 title="Đồng bộ lịch sử nghe nhạc mới nhất từ Spotify"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-spotify-green shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -118,6 +118,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <img
                     src={user.profile_image_url}
                     alt={user.display_name}
+                    width={32}
+                    height={32}
+                    decoding="async"
                     className="w-8 h-8 rounded-full border border-slate-700 object-cover shrink-0"
                   />
                 ) : (
@@ -144,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={onLogin}
-              className="inline-flex items-center gap-2 min-h-[38px] px-3 sm:px-4 py-2 rounded-xl text-xs font-bold bg-spotify-green text-black hover:bg-spotify-hover transition-all cursor-pointer shadow-lg shadow-spotify-green/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian-bg"
+              className="inline-flex items-center gap-2 min-h-[38px] px-3 sm:px-4 py-2 rounded-xl text-xs font-bold bg-spotify-green text-black hover:bg-spotify-hover active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-spotify-green/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green focus-visible:ring-offset-2 focus-visible:ring-offset-obsidian-bg"
             >
               <CheckCircle className="w-4 h-4 shrink-0" />
               <span className="sm:hidden">Đăng nhập</span>

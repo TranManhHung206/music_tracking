@@ -405,10 +405,11 @@ class FrontendBackendContractTests(APITestCase):
             '/api/analytics/weekly-comparison/',
             '/api/ai/persona/latest/',
             '/api/ai/facts/',
+            '/api/ai/assistant/query/',
         ]
 
         for url in protected_urls:
-            res = self.client.get(url) if 'sync' not in url else self.client.post(url)
+            res = self.client.post(url) if ('sync' in url or 'assistant' in url) else self.client.get(url)
             self.assertEqual(
                 res.status_code,
                 status.HTTP_401_UNAUTHORIZED,
@@ -495,4 +496,38 @@ class FrontendBackendContractTests(APITestCase):
                 self.assertIn(k, day)
         for sk in ['total_current_week', 'total_previous_week', 'growth_percentage', 'peak_day_current']:
             self.assertIn(sk, wc_data['summary'])
+
+    # -------------------------------------------------------------------------
+    # 13. HOP DONG HYBRID ASSISTANT (/api/ai/assistant/query/)
+    # -------------------------------------------------------------------------
+    def test_contract_hybrid_assistant_query(self):
+        """Kiem tra hop dong du lieu cho MusicTrack Assistant ca Music Insights & Session Clear."""
+        from unittest.mock import patch
+        from django.test import override_settings
+        self.client.force_authenticate(user=self.user)
+        with override_settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
+            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+                res = self.client.post(
+                    '/api/ai/assistant/query/',
+                    {
+                        'query': 'Tuần này tôi đã nghe những bài hát nào?',
+                        'mode': 'music_insights',
+                        'session_id': 'contract_sid',
+                    },
+                    format='json',
+                )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        for f in ['query', 'answer', 'active_mode', 'resolved_domain', 'needs_clarification', 'scope', 'evidence', 'topics', 'meta']:
+            self.assertIn(f, data, f"Thieu truong '{f}' trong AssistantQueryResponse")
+        self.assertEqual(data['dev_citations'], [])
+        self.assertIsNone(data['dev_metrics'])
+
+        res_clear = self.client.post(
+            '/api/ai/assistant/session/clear/',
+            {'session_id': 'contract_sid'},
+            format='json',
+        )
+        self.assertEqual(res_clear.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_clear.json()['status'], 'cleared')
 

@@ -10,7 +10,6 @@ import type {
   HeatmapData,
   MonthHeatmapData,
   YearHeatmapData,
-  BarChartRaceData,
   WeeklyComparisonData,
   GenreDistributionData,
   ListeningHistoryRecord,
@@ -23,6 +22,8 @@ import type {
   MusicFactsResponse,
   CodebaseQueryResponse,
   CodebaseQueryPayload,
+  AssistantQueryPayload,
+  AssistantQueryResponse,
 } from '../types/ai';
 
 export type TimeFilterInput = TimeRange | { time_range?: string; start_date?: string; end_date?: string };
@@ -72,6 +73,12 @@ function toApiError(err: unknown, fallbackMessage: string): ApiError {
     if (status === 403) {
       return new ApiError(serverMsg || 'Bạn không có quyền thực hiện thao tác này.', 403);
     }
+    if (status === 404) {
+      return new ApiError(
+        serverMsg || 'Không tìm thấy endpoint API (404). Nếu Backend vừa cập nhật, vui lòng khởi động lại máy chủ Django.',
+        404
+      );
+    }
     if (status === 429) {
       return new ApiError(
         serverMsg || 'Hệ thống đang bị giới hạn tần suất yêu cầu. Vui lòng thử lại sau.',
@@ -113,17 +120,6 @@ apiClient.interceptors.request.use((config) => {
 });
 
 // Mock Fallback Data de hien thi UI ngay ca khi offline
-export const MOCK_USER: UserProfile = {
-  id: 1,
-  username: 'hungtran_music',
-  email: 'hungtran@example.com',
-  display_name: 'Hùng Trần',
-  profile_image_url: null,
-  is_spotify_connected: true,
-  is_sync_active: true,
-  last_synced_at: new Date().toISOString(),
-};
-
 export const MOCK_SUMMARY: SummaryStats = {
   total_plays: 428,
   total_duration_ms: 102720000,
@@ -318,52 +314,6 @@ export const MOCK_HEATMAP: HeatmapData = {
     }
     return { day_of_week: day, hour, count };
   }),
-};
-
-export const MOCK_RACE: BarChartRaceData = {
-  metric: 'artists',
-  timeline: [
-    {
-      date: '2026-05',
-      rankings: [
-        { name: 'Sơn Tùng M-TP', plays: 25, cumulative_plays: 25 },
-        { name: 'Đen Vâu', plays: 18, cumulative_plays: 18 },
-        { name: 'The Weeknd', plays: 15, cumulative_plays: 15 },
-        { name: 'Vũ Cát Tường', plays: 10, cumulative_plays: 10 },
-        { name: 'Dua Lipa', plays: 8, cumulative_plays: 8 },
-      ],
-    },
-    {
-      date: '2026-06',
-      rankings: [
-        { name: 'Sơn Tùng M-TP', plays: 22, cumulative_plays: 47 },
-        { name: 'Đen Vâu', plays: 24, cumulative_plays: 42 },
-        { name: 'The Weeknd', plays: 18, cumulative_plays: 33 },
-        { name: 'Vũ Cát Tường', plays: 14, cumulative_plays: 24 },
-        { name: 'Dua Lipa', plays: 12, cumulative_plays: 20 },
-      ],
-    },
-    {
-      date: '2026-07',
-      rankings: [
-        { name: 'Sơn Tùng M-TP', plays: 30, cumulative_plays: 77 },
-        { name: 'Đen Vâu', plays: 20, cumulative_plays: 62 },
-        { name: 'The Weeknd', plays: 22, cumulative_plays: 55 },
-        { name: 'Dua Lipa', plays: 20, cumulative_plays: 40 },
-        { name: 'Vũ Cát Tường', plays: 12, cumulative_plays: 36 },
-      ],
-    },
-    {
-      date: '2026-08',
-      rankings: [
-        { name: 'Sơn Tùng M-TP', plays: 25, cumulative_plays: 102 },
-        { name: 'The Weeknd', plays: 28, cumulative_plays: 83 },
-        { name: 'Đen Vâu', plays: 15, cumulative_plays: 77 },
-        { name: 'Dua Lipa', plays: 25, cumulative_plays: 65 },
-        { name: 'Vũ Cát Tường', plays: 14, cumulative_plays: 50 },
-      ],
-    },
-  ],
 };
 
 export const MOCK_TOP_ALBUMS: TopAlbum[] = [
@@ -847,17 +797,6 @@ export const api = {
     }
   },
 
-  async getBarChartRace(filter?: TimeFilterInput, signal?: AbortSignal): Promise<BarChartRaceData> {
-    const params = buildTimeParams(filter);
-    try {
-      const res = await apiClient.get(`/api/analytics/bar-chart-race/?${params}`, { signal });
-      return res.data;
-    } catch (err) {
-      if (isRequestCanceled(err)) throw err;
-      throw toApiError(err, 'Không thể tải dữ liệu Bar Chart Race.');
-    }
-  },
-
   async getWeeklyComparison(
     filter?: TimeFilterInput,
     periodType?: CalendarPeriodType,
@@ -951,6 +890,25 @@ export const api = {
       return res.data;
     } catch (err) {
       throw toApiError(err, 'Không thể lập chỉ mục lại hệ thống.');
+    }
+  },
+
+  // Unified Hybrid Music & Website Assistant
+  async queryAssistant(payload: AssistantQueryPayload): Promise<AssistantQueryResponse> {
+    try {
+      const res = await apiClient.post('/api/ai/assistant/query/', payload);
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể kết nối đến MusicTrack Assistant.');
+    }
+  },
+
+  async clearAssistantSession(sessionId: string = 'default'): Promise<{ status: string; session_id: string }> {
+    try {
+      const res = await apiClient.post('/api/ai/assistant/session/clear/', { session_id: sessionId });
+      return res.data;
+    } catch (err) {
+      throw toApiError(err, 'Không thể xóa lịch sử hội thoại trên máy chủ.');
     }
   },
 };

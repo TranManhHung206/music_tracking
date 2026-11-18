@@ -6,6 +6,8 @@ Xu ly cac khoang thoi gian loc 7d, 30d, 1y va cac chu ky lich co dinh (Tuan / Th
 import calendar
 import hashlib
 from datetime import datetime, time, timedelta, date
+from django.db.models import Count
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from tracker.models import ListeningHistory
 
@@ -90,12 +92,13 @@ def get_calendar_periods(user, period_type: str = 'week', limit: int = 12) -> li
     """
     Sinh danh sach cac ky thoi gian Tu Hien Tai Ve Qua Khu.
     Tuyet doi khong hien thi tuong lai.
-    Moi ky kem so luot nghe thuc te cua nguoi dung.
+    Moi ky kem so luot nghe thuc te cua nguoi dung (1 truy van TruncDate gom nhom).
     """
     now = timezone.now()
+    user_tz = timezone.get_current_timezone()
     today = timezone.localdate(now)
     p_type = (period_type or 'week').lower()
-    periods = []
+    window_defs: list[tuple[str, str, date, date, bool]] = []
 
     if p_type == 'week':
         curr_monday = today - timedelta(days=today.weekday())
@@ -105,54 +108,25 @@ def get_calendar_periods(user, period_type: str = 'week', limit: int = 12) -> li
             is_curr = (i == 0)
             iso_year, iso_week, _ = mon.isocalendar()
 
-            s_dt = timezone.make_aware(datetime.combine(mon, time.min))
-            e_dt = timezone.make_aware(datetime.combine(sun, time.max))
-            play_count = ListeningHistory.objects.filter(user=user, played_at__range=(s_dt, e_dt)).count()
-
             if is_curr:
                 label = "Tuần này"
+            elif iso_year != today.year:
+                label = f"Tuần {iso_week} ({iso_year})"
             else:
-                if iso_year != today.year:
-                    label = f"Tuần {iso_week} ({iso_year})"
-                else:
-                    label = f"Tuần {iso_week}"
+                label = f"Tuần {iso_week}"
 
-            periods.append({
-                "key": f"{iso_year}-W{iso_week:02d}",
-                "label": label,
-                "start_date": mon.strftime('%Y-%m-%d'),
-                "end_date": sun.strftime('%Y-%m-%d'),
-                "is_current": is_curr,
-                "play_count": play_count,
-            })
+            window_defs.append((f"{iso_year}-W{iso_week:02d}", label, mon, sun, is_curr))
 
     elif p_type == 'month':
         curr_y, curr_m = today.year, today.month
         for i in range(limit):
-            # Tinh lui i thang
             total_m = (curr_y * 12 + curr_m - 1) - i
             y = total_m // 12
             m = total_m % 12 + 1
-
             first_day = date(y, m, 1)
-            last_day_num = calendar.monthrange(y, m)[1]
-            last_day = date(y, m, last_day_num)
+            last_day = date(y, m, calendar.monthrange(y, m)[1])
             is_curr = (i == 0)
-
-            s_dt = timezone.make_aware(datetime.combine(first_day, time.min))
-            e_dt = timezone.make_aware(datetime.combine(last_day, time.max))
-            play_count = ListeningHistory.objects.filter(user=user, played_at__range=(s_dt, e_dt)).count()
-
-            label = f"Tháng {m:02d}/{y}"
-
-            periods.append({
-                "key": f"{y}-{m:02d}",
-                "label": label,
-                "start_date": first_day.strftime('%Y-%m-%d'),
-                "end_date": last_day.strftime('%Y-%m-%d'),
-                "is_current": is_curr,
-                "play_count": play_count,
-            })
+            window_defs.append((f"{y}-{m:02d}", f"Tháng {m:02d}/{y}", first_day, last_day, is_curr))
 
     elif p_type == 'year':
         year_limit = min(limit, 5)
@@ -161,20 +135,33 @@ def get_calendar_periods(user, period_type: str = 'week', limit: int = 12) -> li
             first_day = date(y, 1, 1)
             last_day = date(y, 12, 31)
             is_curr = (i == 0)
+            window_defs.append((str(y), f"Năm {y}", first_day, last_day, is_curr))
 
-            s_dt = timezone.make_aware(datetime.combine(first_day, time.min))
-            e_dt = timezone.make_aware(datetime.combine(last_day, time.max))
-            play_count = ListeningHistory.objects.filter(user=user, played_at__range=(s_dt, e_dt)).count()
+    if not window_defs:
+        return []
 
-            label = f"Năm {y}"
+    min_start = min(w[2] for w in window_defs)
+    max_end = max(w[3] for w in window_defs)
+    min_dt = timezone.make_aware(datetime.combine(min_start, time.min))
+    max_dt = timezone.make_aware(datetime.combine(max_end, time.max))
 
-            periods.append({
-                "key": str(y),
-                "label": label,
-                "start_date": first_day.strftime('%Y-%m-%d'),
-                "end_date": last_day.strftime('%Y-%m-%d'),
-                "is_current": is_curr,
-                "play_count": play_count,
-            })
+    daily_rows = (
+        ListeningHistory.objects.filter(user=user, played_at__range=(min_dt, max_dt))
+        .annotate(play_date=TruncDate('played_at', tzinfo=user_tz))
+        .values('play_date')
+        .annotate(cnt=Count('id'))
+    )
+    daily_map = {row['play_date']: row['cnt'] for row in daily_rows if row['play_date'] is not None}
 
+    periods = []
+    for key, label, s_date, e_date, is_curr in window_defs:
+        play_count = sum(cnt for d, cnt in daily_map.items() if s_date <= d <= e_date)
+        periods.append({
+            "key": key,
+            "label": label,
+            "start_date": s_date.strftime('%Y-%m-%d'),
+            "end_date": e_date.strftime('%Y-%m-%d'),
+            "is_current": is_curr,
+            "play_count": play_count,
+        })
     return periods

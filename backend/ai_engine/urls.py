@@ -15,6 +15,8 @@ from .views import (
     MusicFactsView,
     CodebaseQueryView,
     CodebaseIndexView,
+    HybridAssistantQueryView,
+    HybridAssistantSessionClearView,
 )
 
 app_name = 'ai_engine'
@@ -27,4 +29,6 @@ urlpatterns = [
     path('facts/', MusicFactsView.as_view(), name='music_facts'),
     path('codebase/query/', CodebaseQueryView.as_view(), name='codebase_query'),
     path('codebase/index/', CodebaseIndexView.as_view(), name='codebase_index'),
+    path('assistant/query/', HybridAssistantQueryView.as_view(), name='assistant_query'),
+    path('assistant/session/clear/', HybridAssistantSessionClearView.as_view(), name='assistant_session_clear'),
 ]

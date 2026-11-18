@@ -49,7 +49,7 @@ def get_listening_summary(user, start_dt, end_dt) -> dict:
 
 def get_top_tracks(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
     """Lay danh sach Top bai hat nghe nhieu nhat trong ky."""
-    qs = (
+    qs_list = list(
         ListeningHistory.objects.filter(user=user, played_at__range=(start_dt, end_dt))
         .values(
             'track__spotify_id',
@@ -62,28 +62,30 @@ def get_top_tracks(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
         .order_by('-play_count')[:limit]
     )
 
+    track_ids = [item['track__spotify_id'] for item in qs_list if item.get('track__spotify_id')]
+    artists_by_track = defaultdict(list)
+    if track_ids:
+        for track_sp_id, artist_name in Artist.objects.filter(
+            tracks__spotify_id__in=track_ids
+        ).values_list('tracks__spotify_id', 'name'):
+            artists_by_track[track_sp_id].append(artist_name)
+
     results = []
-    for item in qs:
-        # Lay danh sach nghe si cua track
+    for item in qs_list:
         track_sp_id = item['track__spotify_id']
-        artists = list(
-            Artist.objects.filter(tracks__spotify_id=track_sp_id)
-            .values_list('name', flat=True)
-        )
         results.append({
             "spotify_id": track_sp_id,
             "name": item['track__name'],
             "album_name": item['track__album__name'],
             "album_image_url": item['track__album__image_url'],
-            "artists": artists,
+            "artists": artists_by_track.get(track_sp_id, []),
             "play_count": item['play_count'],
         })
     return results
 
 def get_top_artists(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
     """Lay danh sach Top nghe si nghe nhieu nhat trong ky."""
-    from tracker.models import Album
-    qs = (
+    qs_list = list(
         ListeningHistory.objects.filter(
             user=user,
             played_at__range=(start_dt, end_dt),
@@ -98,20 +100,31 @@ def get_top_artists(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
         .order_by('-play_count')[:limit]
     )
 
-    results = []
-    for item in qs:
-        img_url = item['image_url']
-        art_id = item['artist_id']
-        # Neu chua co anh nghe si, lay anh album gan nhat cua nghe si do
-        if not img_url:
-            alb = Album.objects.filter(artists__spotify_id=art_id, image_url__isnull=False).first()
-            if alb:
-                img_url = alb.image_url
-            else:
-                trk = Track.objects.filter(artists__spotify_id=art_id, album__image_url__isnull=False).first()
-                if trk and trk.album:
-                    img_url = trk.album.image_url
+    missing_ids = [item['artist_id'] for item in qs_list if not item['image_url'] and item.get('artist_id')]
+    fallback_images = {}
+    if missing_ids:
+        for art_id, url in (
+            Album.objects.filter(artists__spotify_id__in=missing_ids, image_url__isnull=False)
+            .order_by('id')
+            .values_list('artists__spotify_id', 'image_url')
+        ):
+            if art_id not in fallback_images and url is not None:
+                fallback_images[art_id] = url
 
+        still_missing = [aid for aid in missing_ids if aid not in fallback_images]
+        if still_missing:
+            for art_id, url in (
+                Track.objects.filter(artists__spotify_id__in=still_missing, album__image_url__isnull=False)
+                .order_by('id')
+                .values_list('artists__spotify_id', 'album__image_url')
+            ):
+                if art_id not in fallback_images and url is not None:
+                    fallback_images[art_id] = url
+
+    results = []
+    for item in qs_list:
+        art_id = item['artist_id']
+        img_url = item['image_url'] or fallback_images.get(art_id)
         results.append({
             "spotify_id": art_id,
             "name": item['artist_name'],
@@ -327,10 +340,31 @@ def register_unclassified_artist(artist_name: str) -> bool:
     """Ghi nhan mot nghe si don le vao CSV neu chua ton tai."""
     return register_unclassified_artists_batch([artist_name]) > 0
 
+_ARTIST_SET_PATTERN_CACHE: dict[str, tuple[set[str], re.Pattern | None]] = {}
+
 def is_artist_match(artist_name_lower: str, target_name: str) -> bool:
     """Kiem tra ten nghe si khop theo tu rieng biet tranh loi substring."""
     pattern = r'\b' + re.escape(target_name.lower()) + r'\b'
     return bool(re.search(pattern, artist_name_lower))
+
+def _match_artist_set(artist_names_lower: list[str], artist_set: set[str], cache_name: str) -> bool:
+    """Kiem tra tap nghe si bang regex tong hop duoc cache de tranh bien dich lai."""
+    if not artist_names_lower or not artist_set:
+        return False
+    cached = _ARTIST_SET_PATTERN_CACHE.get(cache_name)
+    if cached is None or cached[0] != artist_set:
+        sorted_targets = sorted({str(t).lower() for t in artist_set if t is not None}, key=len, reverse=True)
+        compiled = (
+            re.compile(r'\b(?:' + '|'.join(re.escape(t) for t in sorted_targets) + r')\b')
+            if sorted_targets
+            else None
+        )
+        _ARTIST_SET_PATTERN_CACHE[cache_name] = (set(artist_set), compiled)
+    else:
+        compiled = cached[1]
+    if compiled is None:
+        return False
+    return any(compiled.search(a_name) is not None for a_name in artist_names_lower)
 
 def classify_artist_genres(artist_name: str, track_name: str = "", artists: list = None, track = None, auto_register: bool = False) -> str:
     """
@@ -363,10 +397,7 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     tempo = getattr(track, 'tempo', 0.0) if track else 0.0
 
     # 1. Kiem tra K-Pop ro rang (vd: Rose co dau sac nhung la K-Pop)
-    is_kpop_artist = any(
-        any(is_artist_match(a_name, kp) for kp in KPOP_ARTISTS) for a_name in artist_names_lower
-    )
-    if is_kpop_artist:
+    if _match_artist_set(artist_names_lower, KPOP_ARTISTS, "kpop"):
         return "K-Pop"
 
     # 2. Cyrillic (Nga / Dong Au)
@@ -377,14 +408,12 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     has_viet_accent = bool(VIETNAMESE_DIACRITICS_REGEX.search(title)) or any(
         bool(VIETNAMESE_DIACRITICS_REGEX.search(a_name)) for a_name in artist_names_lower
     )
-    is_vpop_artist = any(
-        any(is_artist_match(a_name, vp) for vp in VPOP_ARTISTS) for a_name in artist_names_lower
-    )
+    is_vpop_artist = _match_artist_set(artist_names_lower, VPOP_ARTISTS, "vpop")
     has_vpop_kw = any(kw in title_lower for kw in VPOP_KEYWORDS)
     is_vietnamese = has_viet_accent or is_vpop_artist or has_vpop_kw
 
     # Kiem tra dau hieu EDM / Electronic chung
-    is_edm_artist = any(any(is_artist_match(a_name, ea) for ea in EDM_ARTISTS) for a_name in artist_names_lower)
+    is_edm_artist = _match_artist_set(artist_names_lower, EDM_ARTISTS, "edm")
     is_edm_title = any(k in title_lower for k in ["remix", "radio edit", "dubstep", "bass", "club mix", "prod."])
 
     if is_vietnamese:
@@ -403,8 +432,7 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
     if danceability >= 0.75 or any(a in ["snoop dogg", "a$ap rocky", "eminem", "drake"] for a in artist_names_lower):
         return "Hip-Hop / Rap"
 
-    is_usuk_artist = any(any(is_artist_match(a_name, ua) for ua in USUK_ARTISTS) for a_name in artist_names_lower)
-    if is_usuk_artist:
+    if _match_artist_set(artist_names_lower, USUK_ARTISTS, "usuk"):
         return "US-UK / Pop"
 
     return "Global Pop"
@@ -412,10 +440,22 @@ def classify_artist_genres(artist_name: str, track_name: str = "", artists: list
 def get_genre_distribution(user, start_dt, end_dt) -> dict:
     """Phan tich ti le cac the loai am nhac trong lich su nghe cua nguoi dung."""
     ensure_custom_artists_loaded()
-    history = (
+    track_counts = list(
         ListeningHistory.objects.filter(user=user, played_at__range=(start_dt, end_dt))
-        .select_related('track')
-        .prefetch_related('track__artists')
+        .values('track_id')
+        .annotate(play_count=Count('id'))
+    )
+    if not track_counts:
+        return {"genres": [], "total_plays": 0, "top_genre": "Chưa có dữ liệu"}
+
+    track_ids = [row['track_id'] for row in track_counts if row['track_id'] is not None]
+    tracks_by_id = (
+        {
+            t.id: t
+            for t in Track.objects.filter(id__in=track_ids).prefetch_related('artists')
+        }
+        if track_ids
+        else {}
     )
 
     genre_counts = {}
@@ -432,15 +472,16 @@ def get_genre_distribution(user, start_dt, end_dt) -> dict:
     }
 
     total_plays = 0
-    for lh in history:
-        t = lh.track
+    for row in track_counts:
+        t = tracks_by_id.get(row['track_id'])
         artists = list(t.artists.all()) if t else []
         artist_names = [a.name for a in artists]
         art_name = artist_names[0] if artist_names else ""
         trk_name = t.name if t else ""
         genre = classify_artist_genres(art_name, trk_name, artists=artist_names, track=t)
-        genre_counts[genre] = genre_counts.get(genre, 0) + 1
-        total_plays += 1
+        plays = row['play_count']
+        genre_counts[genre] = genre_counts.get(genre, 0) + plays
+        total_plays += plays
 
     if total_plays == 0:
         return {"genres": [], "total_plays": 0, "top_genre": "Chưa có dữ liệu"}
@@ -810,7 +851,7 @@ def get_bar_chart_race(user, start_dt, end_dt, top_n: int = 5) -> dict:
 
 def get_top_albums(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
     """Lay danh sach Top album nghe nhieu nhat trong ky."""
-    qs = (
+    qs_list = list(
         ListeningHistory.objects.filter(
             user=user,
             played_at__range=(start_dt, end_dt),
@@ -826,25 +867,32 @@ def get_top_albums(user, start_dt, end_dt, limit: int = 10) -> list[dict]:
         .order_by('-play_count')[:limit]
     )
 
-    results = []
-    for item in qs:
-        alb_id = item['album_id']
-        artists = list(
-            Artist.objects.filter(albums__spotify_id=alb_id)
-            .values_list('name', flat=True)
-        )
-        if not artists:
-            artists = list(
-                Artist.objects.filter(tracks__album__spotify_id=alb_id)
-                .values_list('name', flat=True)
+    album_ids = [item['album_id'] for item in qs_list if item.get('album_id')]
+    artists_by_album = defaultdict(list)
+    if album_ids:
+        for alb_sp_id, artist_name in Artist.objects.filter(
+            albums__spotify_id__in=album_ids
+        ).values_list('albums__spotify_id', 'name'):
+            artists_by_album[alb_sp_id].append(artist_name)
+
+        missing_album_ids = [aid for aid in album_ids if not artists_by_album.get(aid)]
+        if missing_album_ids:
+            for alb_sp_id, artist_name in (
+                Artist.objects.filter(tracks__album__spotify_id__in=missing_album_ids)
+                .values_list('tracks__album__spotify_id', 'name')
                 .distinct()
-            )
+            ):
+                artists_by_album[alb_sp_id].append(artist_name)
+
+    results = []
+    for item in qs_list:
+        alb_id = item['album_id']
         results.append({
             "spotify_id": alb_id,
             "name": item['album_name'],
             "image_url": item['image_url'],
             "release_date": item['release_date'] or "",
-            "artists": artists,
+            "artists": artists_by_album.get(alb_id, []),
             "play_count": item['play_count'],
         })
     return results

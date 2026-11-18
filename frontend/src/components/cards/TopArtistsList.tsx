@@ -68,6 +68,10 @@ export const TopArtistsList: React.FC<TopArtistsListProps> = ({
                     <img
                       src={artist.image_url}
                       alt={artist.name}
+                      width={44}
+                      height={44}
+                      loading="lazy"
+                      decoding="async"
                       className="w-11 h-11 rounded-full object-cover border border-slate-800 shrink-0"
                     />
                   ) : (

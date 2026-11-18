@@ -241,10 +241,10 @@ export const ShareableCard: React.FC<ShareableCardProps> = ({
         <div className="flex flex-col items-center max-w-lg w-full">
           {/* Top Controls: Ratio Selector & Close */}
           <div className="w-full flex items-center justify-between gap-2 mb-4 px-1">
-            <SegmentedControl
+            <SegmentedControl<AspectRatioType>
               options={RATIO_OPTIONS}
               value={aspectRatio}
-              onChange={setAspectRatio}
+              onChange={(nextRatio) => setAspectRatio(nextRatio)}
               ariaLabel="Chọn tỷ lệ khung hình thẻ chia sẻ"
               size="sm"
               className="flex-wrap"

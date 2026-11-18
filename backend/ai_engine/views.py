@@ -6,10 +6,13 @@ API Views cho ung dung AI Engine:
 - GET  /api/ai/recommendations/
 """
 
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
+
+logger = logging.getLogger(__name__)
 
 from .models import AIMusicPersona
 from .serializers import (
@@ -18,13 +21,17 @@ from .serializers import (
     MusicFactsResponseSerializer,
     CodebaseQueryRequestSerializer,
     CodebaseQueryResponseSerializer,
+    AssistantQueryRequestSerializer,
+    AssistantSessionClearSerializer,
 )
 from .services import (
     generate_and_save_persona,
     get_song_recommendations,
     get_or_generate_music_facts,
     get_rag_service,
+    get_assistant_service,
 )
+from .services.assistant.session_store import clear_session
 from .services.rag.retrieval.cascade import PipelineMode
 
 from django.core.cache import cache
@@ -159,5 +166,55 @@ class CodebaseIndexView(APIView):
         rag_service = get_rag_service()
         stats = rag_service.index_codebase(force=True)
         return Response(stats, status=status.HTTP_200_OK)
+
+
+class HybridAssistantQueryView(APIView):
+    """
+    API tro ly hoi thoai lai MusicTrack Assistant.
+    Bat buoc ap dung user=request.user, tach biet Music Insights va Website Support.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = AssistantQueryRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        service = get_assistant_service()
+        try:
+            result = service.handle_query(
+                user=request.user,
+                query_text=data['query'].strip(),
+                mode=data.get('mode', 'auto'),
+                session_id=data.get('session_id', 'default'),
+                period_context=data.get('period_context'),
+                rag_mode=data.get('rag_mode', 'full_cascade'),
+                top_k=data.get('top_k', 5),
+                use_cache=data.get('use_cache', True),
+            )
+            return Response(result.model_dump(), status=status.HTTP_200_OK)
+        except Exception as exc:
+            logger.exception("HybridAssistantQueryView gap loi ngoai le: %s", exc)
+            return Response(
+                {"error": "Máy chủ Assistant gặp sự cố khi xử lý yêu cầu. Vui lòng thử lại sau."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class HybridAssistantSessionClearView(APIView):
+    """API xoa lich su hoi thoai theo phien cua chinh nguoi dung dang dang nhap."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = AssistantSessionClearSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        session_id = serializer.validated_data.get('session_id', 'default')
+        clear_session(request.user.id, session_id)
+        return Response({"status": "cleared", "session_id": session_id}, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        session_id = request.query_params.get('session_id', 'default')
+        clear_session(request.user.id, session_id)
+        return Response({"status": "cleared", "session_id": session_id}, status=status.HTTP_200_OK)
 
 
