@@ -25,6 +25,10 @@ export default defineConfig({
               name: 'vendor-capture',
               test: /[\\/]node_modules[\\/]html2canvas-pro[\\/]/,
             },
+            {
+              name: 'vendor-markdown',
+              test: /[\\/]node_modules[\\/](react-markdown|remark-gfm|remark-.*|rehype-.*|unified|mdast-.*|micromark.*|hast-.*|unist-.*)[\\/]/,
+            },
           ],
         },
       },
