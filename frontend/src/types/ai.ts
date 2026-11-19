@@ -177,6 +177,7 @@ export interface AssistantQueryResponse {
   resolved_domain: AssistantResolvedDomain;
   needs_clarification: boolean;
   clarification_options: AssistantClarificationOption[];
+  suggested_scopes?: AssistantClarificationOption[];
   scope: AssistantScopeMeta;
   evidence: AssistantEvidenceItem[];
   topics: AssistantTopicItem[];

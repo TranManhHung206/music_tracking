@@ -55,6 +55,25 @@ GENERIC_NON_ARTIST_TOKENS = {
     "tui",
     "ban",
     "ho",
+    "cua",
+    "ve",
+    "cho",
+    "voi",
+    "tai",
+    "trong",
+    "duoc",
+    "da",
+    "dang",
+    "se",
+    "muon",
+    "can",
+    "cua toi",
+    "cua minh",
+    "cua tui",
+    "cua ban",
+    "noi bat",
+    "yeu thich",
+    "hang dau",
     "nhieu nhat",
     "top",
     "tuan nay",
@@ -76,6 +95,36 @@ GENERIC_NON_ARTIST_TOKENS = {
     "album",
     "the loai",
 }
+
+GENRE_HINT_KEYWORDS = (
+    "vpop",
+    "v-pop",
+    "kpop",
+    "k-pop",
+    "edm",
+    "electronic",
+    "dj",
+    "us-uk",
+    "usuk",
+    "rap",
+    "hip-hop",
+    "hiphop",
+    "hip hop",
+    "acoustic",
+    "lofi",
+    "lo-fi",
+    "phonk",
+    "global pop",
+    "nhac viet",
+    "nhac han",
+    "nhac dien tu",
+    "nhac moc",
+    "au my",
+    "quoc te",
+    "viet",
+    "viet nam",
+    "han quoc",
+)
 
 
 class ExtractedArtistParams(BaseModel):
@@ -291,7 +340,9 @@ def _extract_explicit_unknown_artist_name(query_text: str) -> str | None:
         r"(?:nghe\s+si|nghệ\s+sĩ|ca\s+si|ca\s+sĩ)\s+[\"']?([A-Za-zÀ-ỹ0-9][A-Za-zÀ-ỹ0-9\s.&'-]{1,40})[\"']?",
     )
     stop_tail = re.compile(
-        r"\s+(?:trong|tu|từ|thang|tháng|tuan|tuần|nam|năm|ky|kỳ|bao|nhieu|nhiều|may|mấy|nao|nào|co|có|la|là|ra|sao|khong|không)\b.*$",
+        r"\s+(?:tui|toi|tôi|minh|mình|ban|bạn|nghe|xem|tim|tìm|thich|thích|da|đã|dang|đang|duoc|được|"
+        r"trong|tu|từ|thang|tháng|tuan|tuần|nam|năm|ky|kỳ|bao|nhieu|nhiều|may|mấy|nao|nào|co|có|la|là|ra|sao)\b.*$|"
+        r"\s+(?:hay\s+|phai\s+|phải\s+)?(?:khong|không)\s*[?.!]*$",
         flags=re.IGNORECASE,
     )
     for pat in patterns:
@@ -300,13 +351,57 @@ def _extract_explicit_unknown_artist_name(query_text: str) -> str | None:
             continue
         candidate = stop_tail.sub("", m.group(1)).strip(" ?.,!\"'")
         norm_cand = normalize_vi_text(candidate)
-        if (
-            len(norm_cand) >= 2
-            and norm_cand not in GENERIC_NON_ARTIST_TOKENS
-            and not any(norm_cand.startswith(prefix) for prefix in ("nao", "do", "nay", "ay", "nhieu"))
+        if not norm_cand or len(norm_cand) < 2 or norm_cand.isdigit():
+            continue
+        if norm_cand in GENERIC_NON_ARTIST_TOKENS:
+            continue
+        if any(
+            norm_cand.startswith(prefix)
+            for prefix in (
+                "nao",
+                "do",
+                "nay",
+                "ay",
+                "nhieu",
+                "tui",
+                "toi",
+                "minh",
+                "top",
+                "liet ke",
+                "cua ",
+                "ve ",
+                "cho ",
+                "duoc ",
+                "da ",
+                "dang ",
+                "noi bat",
+                "yeu thich",
+                "hang dau",
+            )
         ):
-            return candidate
+            continue
+        if any(
+            re.search(r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])", norm_cand)
+            for kw in GENRE_HINT_KEYWORDS
+        ):
+            continue
+        return candidate
     return None
+
+
+def get_artist_all_time_plays(user, artist_name: str) -> int:
+    """Dem tong luot nghe cua 1 nghe si tren toan lich su cua rieng user hien tai."""
+    norm_target = normalize_vi_text(artist_name)
+    if not norm_target:
+        return 0
+    matched_artist = None
+    for art in _get_user_listened_artists(user):
+        if normalize_vi_text(art.name) == norm_target:
+            matched_artist = art
+            break
+    if not matched_artist:
+        return 0
+    return ListeningHistory.objects.filter(user=user, track__artists=matched_artist).count()
 
 
 def try_extract_artist_params_with_llm(query_text: str, today_iso: str) -> ExtractedArtistParams | None:

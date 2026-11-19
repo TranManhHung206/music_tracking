@@ -190,3 +190,96 @@ export function resetPeriodScopedSnapshot(prev: DashboardDataSnapshot): Dashboar
     agentMeta: undefined,
   };
 }
+
+/** Kiểm tra hai đối tượng CalendarPeriodItem có đồng nhất toàn bộ thuộc tính hiển thị hay không. */
+export function isSameCalendarPeriod(
+  a: CalendarPeriodItem | null | undefined,
+  b: CalendarPeriodItem | null | undefined
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.key === b.key &&
+    a.label === b.label &&
+    a.start_date === b.start_date &&
+    a.end_date === b.end_date &&
+    a.is_current === b.is_current &&
+    a.play_count === b.play_count
+  );
+}
+
+/** Kiểm tra hai kỳ có cùng phạm vi truy vấn API (key, start_date, end_date). */
+export function hasSamePeriodQueryScope(
+  a: CalendarPeriodItem | null | undefined,
+  b: CalendarPeriodItem | null | undefined
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.key === b.key &&
+    a.start_date === b.start_date &&
+    a.end_date === b.end_date
+  );
+}
+
+/** Tạo descriptor tối giản chỉ phụ thuộc key và biên ngày cho lệnh gọi API. */
+export function createQueryPeriodDescriptor(
+  key: string,
+  startDate: string,
+  endDate: string
+): CalendarPeriodItem | null {
+  if (!key) return null;
+  return {
+    key,
+    label: key,
+    start_date: startDate,
+    end_date: endDate,
+    is_current: false,
+    play_count: 0,
+  };
+}
+
+/** Chọn lại kỳ phù hợp từ danh sách máy chủ và giữ nguyên tham chiếu cũ nếu dữ liệu giống hệt. */
+export function resolvePeriodFromServerList(
+  prev: CalendarPeriodItem | null,
+  periods: CalendarPeriodItem[],
+  savedMode: string | null,
+  savedKey: string | null
+): CalendarPeriodItem | null {
+  if (!Array.isArray(periods) || periods.length === 0) {
+    return prev;
+  }
+
+  let nextPeriod: CalendarPeriodItem | undefined;
+  if (savedMode === 'specific' && savedKey) {
+    nextPeriod = periods.find((p) => p.key === savedKey);
+  }
+  if (!nextPeriod && prev && !prev.is_current && savedMode === 'specific') {
+    nextPeriod = periods.find((p) => p.key === prev.key);
+  }
+  if (!nextPeriod) {
+    nextPeriod = periods.find((p) => p.is_current) || periods[0];
+  }
+  if (!nextPeriod) {
+    return prev;
+  }
+  return prev && isSameCalendarPeriod(prev, nextPeriod) ? prev : nextPeriod;
+}
+
+/** Xác định kỳ hiện hành sau đồng bộ Spotify và giữ nguyên tham chiếu nếu không đổi. */
+export function resolveActivePeriodAfterSync(
+  current: CalendarPeriodItem | null,
+  updatedPeriods: CalendarPeriodItem[]
+): CalendarPeriodItem | null {
+  if (!Array.isArray(updatedPeriods) || updatedPeriods.length === 0) {
+    return current;
+  }
+  const matched = current
+    ? updatedPeriods.find((p) => p.key === current.key)
+    : undefined;
+  const candidate = matched || updatedPeriods[0] || null;
+  if (!candidate) {
+    return current;
+  }
+  return current && isSameCalendarPeriod(current, candidate) ? current : candidate;
+}

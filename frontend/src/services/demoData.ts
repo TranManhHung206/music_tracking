@@ -17,6 +17,7 @@ import type {
 } from '../types/analytics';
 import type {
   AgentMeta,
+  AssistantClarificationOption,
   AssistantEvidenceItem,
   AssistantMode,
   AssistantQueryResponse,
@@ -693,6 +694,48 @@ function normalizeDemoText(input: string): string {
     .trim();
 }
 
+function buildDemoQuickScopeOptions(
+  query: string,
+  normQuery: string,
+  activeLabel: string,
+  isZeroData: boolean
+): AssistantClarificationOption[] {
+  const hasExplicitPeriod =
+    normQuery.includes('tuan nay') ||
+    normQuery.includes('tuan truoc') ||
+    normQuery.includes('thang nay') ||
+    normQuery.includes('thang truoc') ||
+    normQuery.includes('nam nay') ||
+    normQuery.includes('nam truoc') ||
+    normQuery.includes('nam ngoai') ||
+    normQuery.includes('30 ngay') ||
+    normQuery.includes('7 ngay');
+
+  if (hasExplicitPeriod && !isZeroData) {
+    return [];
+  }
+
+  const baseQ = (query || '').trim().replace(/[?.!]+$/, '') || 'Tổng kết dữ liệu nghe nhạc của tôi';
+  const now = new Date();
+  const currentMonth = `${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  const candidates: Array<{ label: string; periodMatch: string; query: string }> = [
+    { label: 'Xem Tuần này', periodMatch: 'Tuần này', query: `${baseQ} trong tuần này` },
+    { label: `Xem Tháng ${currentMonth}`, periodMatch: `Tháng ${currentMonth}`, query: `${baseQ} trong tháng này` },
+    { label: `Xem Năm ${now.getFullYear()}`, periodMatch: `Năm ${now.getFullYear()}`, query: `${baseQ} trong năm nay` },
+    { label: 'Xem 30 ngày gần nhất', periodMatch: '30 ngày gần nhất', query: `${baseQ} trong 30 ngày gần nhất` },
+  ];
+
+  const normActive = normalizeDemoText(activeLabel);
+  return candidates
+    .filter((c) => normalizeDemoText(c.periodMatch) !== normActive)
+    .slice(0, 3)
+    .map((c) => ({
+      mode: 'music_insights',
+      label: c.label,
+      query: c.query,
+    }));
+}
+
 export function buildDemoAssistantReply(
   query: string,
   mode: AssistantMode,
@@ -904,6 +947,7 @@ export function buildDemoAssistantReply(
       resolved_domain: 'music_insights',
       needs_clarification: false,
       clarification_options: [],
+      suggested_scopes: buildDemoQuickScopeOptions(query, norm, label, true),
       scope: {
         label,
         start_date: period?.start_date || null,
@@ -1056,6 +1100,7 @@ export function buildDemoAssistantReply(
     resolved_domain: 'music_insights',
     needs_clarification: false,
     clarification_options: [],
+    suggested_scopes: buildDemoQuickScopeOptions(query, norm, label, false),
     scope: {
       label,
       start_date: period?.start_date || null,

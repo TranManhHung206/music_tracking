@@ -1,8 +1,12 @@
-import { useState, useCallback, useEffect, type MutableRefObject } from 'react';
+import { useState, useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import type { UserProfile } from '../types/auth';
 import type { CalendarPeriodType, CalendarPeriodItem } from '../types/analytics';
 import type { ToastMessage } from '../components/ui/Toast';
 import { api } from '../services/api';
+import {
+  hasSamePeriodQueryScope,
+  resolveActivePeriodAfterSync,
+} from './dashboardDataState';
 
 interface UseSpotifySyncOptions {
   user: UserProfile | null;
@@ -29,6 +33,39 @@ export function useSpotifySync({
   addToast,
 }: UseSpotifySyncOptions) {
   const [isSyncing, setIsSyncing] = useState(false);
+  const periodTypeRef = useRef(periodType);
+  const selectedPeriodRef = useRef(selectedPeriod);
+
+  useEffect(() => {
+    periodTypeRef.current = periodType;
+    selectedPeriodRef.current = selectedPeriod;
+  }, [periodType, selectedPeriod]);
+
+  const syncPeriodsAndRefresh = useCallback(
+    async (awaitRefresh: boolean) => {
+      const targetPeriodType = periodTypeRef.current;
+      const updatedPeriods = await api.getAvailablePeriods(targetPeriodType, 12);
+      if (periodTypeRef.current !== targetPeriodType) return;
+
+      setAvailablePeriods(updatedPeriods);
+      const currentPeriod = selectedPeriodRef.current;
+      const activePeriod = resolveActivePeriodAfterSync(currentPeriod, updatedPeriods);
+      const sameQueryScope = hasSamePeriodQueryScope(currentPeriod, activePeriod);
+
+      if (activePeriod && activePeriod !== currentPeriod) {
+        setSelectedPeriod(activePeriod);
+      }
+
+      // Chỉ gọi refresh trực tiếp khi kỳ truy vấn giữ nguyên; nếu đổi kỳ, useDashboardData tự tải qua effect
+      if (sameQueryScope) {
+        const refreshTask = refreshAllData(activePeriod, { clearPeriodData: false });
+        if (awaitRefresh) {
+          await refreshTask;
+        }
+      }
+    },
+    [setAvailablePeriods, setSelectedPeriod, refreshAllData]
+  );
 
   // Đồng bộ ngầm 1 lần duy nhất sau khi xác thực người dùng
   useEffect(() => {
@@ -40,30 +77,14 @@ export function useSpotifySync({
         const syncRes = await api.triggerSync();
         if (syncRes.scrobbled_count > 0) {
           addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} lượt nghe mới!`);
-          const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
-          setAvailablePeriods(updatedPeriods);
-          const activePeriod =
-            (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) ||
-            updatedPeriods[0] ||
-            null;
-          setSelectedPeriod(activePeriod);
-          refreshAllData(activePeriod, { clearPeriodData: false });
+          await syncPeriodsAndRefresh(false);
         }
       } catch {
         // Bỏ qua lỗi sync ngầm khởi tạo
       }
     };
-    runAutoSync();
-  }, [
-    user,
-    hasAutoSyncedRef,
-    addToast,
-    refreshAllData,
-    selectedPeriod,
-    periodType,
-    setAvailablePeriods,
-    setSelectedPeriod,
-  ]);
+    void runAutoSync();
+  }, [user, hasAutoSyncedRef, addToast, syncPeriodsAndRefresh]);
 
   // Đồng bộ định kỳ mỗi 15 phút khi tab đang mở
   useEffect(() => {
@@ -73,14 +94,7 @@ export function useSpotifySync({
         const syncRes = await api.triggerSync();
         if (syncRes.scrobbled_count > 0) {
           addToast('info', `Auto-Scrobble: Đã đồng bộ thêm ${syncRes.scrobbled_count} bài hát mới từ Spotify.`);
-          const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
-          setAvailablePeriods(updatedPeriods);
-          const activePeriod =
-            (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) ||
-            updatedPeriods[0] ||
-            null;
-          setSelectedPeriod(activePeriod);
-          refreshAllData(activePeriod, { clearPeriodData: false });
+          await syncPeriodsAndRefresh(false);
         }
       } catch {
         // Bỏ qua lỗi polling ngầm
@@ -88,15 +102,7 @@ export function useSpotifySync({
     }, 900000);
 
     return () => clearInterval(interval);
-  }, [
-    user,
-    selectedPeriod,
-    periodType,
-    refreshAllData,
-    addToast,
-    setAvailablePeriods,
-    setSelectedPeriod,
-  ]);
+  }, [user, addToast, syncPeriodsAndRefresh]);
 
   const handleSync = useCallback(async () => {
     if (isDemoMode && !user) {
@@ -109,14 +115,7 @@ export function useSpotifySync({
       const res = await api.triggerSync();
       const count = res.scrobbled_count ?? 0;
       addToast('success', `Đồng bộ thành công! Đã ghi nhận ${count} bài hát mới từ Spotify.`);
-      const updatedPeriods = await api.getAvailablePeriods(periodType, 12);
-      setAvailablePeriods(updatedPeriods);
-      const activePeriod =
-        (selectedPeriod && updatedPeriods.find((p) => p.key === selectedPeriod.key)) ||
-        updatedPeriods[0] ||
-        null;
-      setSelectedPeriod(activePeriod);
-      await refreshAllData(activePeriod, { clearPeriodData: false });
+      await syncPeriodsAndRefresh(true);
     } catch (err: unknown) {
       const apiErr = err as { status?: number; message?: string };
       if (apiErr?.status === 429) {
@@ -131,16 +130,7 @@ export function useSpotifySync({
     } finally {
       setIsSyncing(false);
     }
-  }, [
-    isDemoMode,
-    user,
-    addToast,
-    periodType,
-    selectedPeriod,
-    setAvailablePeriods,
-    setSelectedPeriod,
-    refreshAllData,
-  ]);
+  }, [isDemoMode, user, addToast, syncPeriodsAndRefresh]);
 
   return { isSyncing, handleSync };
 }

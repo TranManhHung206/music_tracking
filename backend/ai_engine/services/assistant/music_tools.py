@@ -33,6 +33,7 @@ from .artist_tools import (
     collect_artist_subtools_bundle,
     extract_artist_target,
     extract_date_range_from_text,
+    get_artist_all_time_plays,
     try_extract_artist_params_with_llm,
 )
 from .genre_tools import (
@@ -40,7 +41,7 @@ from .genre_tools import (
     extract_genre_target,
 )
 from .intent_router import normalize_vi_text
-from .schemas import AssistantEvidenceItem, AssistantScopeMeta
+from .schemas import AssistantClarificationOption, AssistantEvidenceItem, AssistantScopeMeta
 
 FEATURE_LABELS_VI = {
     "valence": "Cảm xúc tích cực (Valence)",
@@ -240,6 +241,76 @@ def _format_duration_vi(total_duration_ms: int, total_hours: float) -> str:
 def _slug_key(text: str) -> str:
     norm = normalize_vi_text(text)
     return re.sub(r"[^a-z0-9]+", "_", norm).strip("_")[:28] or "item"
+
+
+def _extract_requested_limit(norm_q: str, default_k: int) -> int:
+    """Trich xuat so luong top/liet ke tu cau hoi (gioi han an toan 1..10)."""
+    m = re.search(r"\b(?:top|liet ke|cho|lay|xem)\s+(\d{1,2})\b", norm_q)
+    if m:
+        return max(1, min(int(m.group(1)), 10))
+    return default_k
+
+
+def _build_quick_scope_options(
+    query_text: str,
+    resolved: ResolvedPeriod,
+    zero_target_plays: bool,
+) -> list[AssistantClarificationOption]:
+    """
+    Tao cac nut chuyen nhanh pham vi thoi gian khi nguoi dung chua neu moc thoi gian
+    hoac khi pham vi hien tai khong co du lieu.
+    """
+    explicit_in_current_query = (
+        resolved.source == "requested_in_query" and not resolved.inherited_from_session
+    )
+    if explicit_in_current_query and not zero_target_plays:
+        return []
+
+    base_q = re.sub(r"\s+", " ", (query_text or "").strip()).rstrip("?.! ")
+    # Go bo cum moc thoi gian cu (neu co) de khi bam nut khong bi trung lap dieu kien loc
+    cleaned_q = re.sub(
+        r"\s*\b(?:trong\s+|vao\s+|vào\s+|o\s+|ở\s+)?(?:tuần\s+này|tuan\s+nay|tuần\s+trước|tuan\s+truoc|"
+        r"tuần\s+qua|tuan\s+qua|tháng\s+này|thang\s+nay|tháng\s+trước|thang\s+truoc|"
+        r"tháng\s+\d{1,2}(?:[/-]\d{4}|\s+năm\s+\d{4})?|thang\s+\d{1,2}(?:[/-]\d{4}|\s+nam\s+\d{4})?|"
+        r"năm\s+nay|nam\s+nay|năm\s+trước|nam\s+truoc|năm\s+ngoái|nam\s+ngoai|năm\s+20\d{2}|nam\s+20\d{2}|"
+        r"hôm\s+nay|hom\s+nay|hôm\s+qua|hom\s+qua|"
+        r"30\s+ngày(?:\s+gần\s+nhất)?|30\s+ngay(?:\s+gan\s+nhat)?|"
+        r"7\s+ngày(?:\s+gần\s+nhất)?|7\s+ngay(?:\s+gan\s+nhat)?)\b",
+        "",
+        base_q,
+        flags=re.IGNORECASE,
+    )
+    cleaned_q = re.sub(r"\s+", " ", cleaned_q).strip(" ,.-")
+    if not cleaned_q:
+        cleaned_q = "Tổng kết dữ liệu nghe nhạc của tôi"
+
+    today = timezone.localdate()
+    candidates = [
+        ("Xem Tuần này", "Tuần này", f"{cleaned_q} trong tuần này"),
+        (
+            f"Xem Tháng {today.month:02d}/{today.year}",
+            f"Tháng {today.month:02d}/{today.year}",
+            f"{cleaned_q} trong tháng này",
+        ),
+        (f"Xem Năm {today.year}", f"Năm {today.year}", f"{cleaned_q} trong năm nay"),
+        ("Xem 30 ngày gần nhất", "30 ngày gần nhất", f"{cleaned_q} trong 30 ngày gần nhất"),
+    ]
+
+    active_norm = normalize_vi_text(resolved.label)
+    options: list[AssistantClarificationOption] = []
+    for btn_label, period_label, next_query in candidates:
+        if normalize_vi_text(period_label) == active_norm:
+            continue
+        options.append(
+            AssistantClarificationOption(
+                mode="music_insights",
+                label=btn_label,
+                query=next_query,
+            )
+        )
+        if len(options) >= 3:
+            break
+    return options
 
 
 def _find_user_seed_track(
@@ -460,6 +531,13 @@ def collect_music_insights_bundle(
     artist_name, artist_source = extract_artist_target(user, query_text, entities_view)
     genre_name, genre_source = extract_genre_target(query_text, pm)
 
+    # Neu cau hoi neu ro the loai (vd: VPOP, EDM) va nghe si khong khop trong DB -> uu tien the loai
+    if genre_source == "matched_in_query" and artist_source not in ("matched_in_query", "session_coref"):
+        artist_name = None
+        artist_source = "none"
+
+    effective_top_k = _extract_requested_limit(norm_q, top_k)
+
     # Chi kich hoat tang 2 LLM khi cau hoi co dau hieu moc ngay phuc tap ma tang 1 chua bat duoc
     llm_dates: tuple[str | None, str | None] | None = None
     if extract_date_range_from_text(query_text) is None and any(h in norm_q for h in COMPLEX_DATE_HINTS):
@@ -542,7 +620,7 @@ def collect_music_insights_bundle(
             start_date=resolved.start_date,
             end_date=resolved.end_date,
             norm_q=norm_q,
-            top_k=top_k,
+            top_k=effective_top_k,
         )
         aggregates["artist_focus"] = artist_bundle["artist_focus"]
         aggregates["artist_focus"]["resolution_source"] = artist_source
@@ -580,7 +658,7 @@ def collect_music_insights_bundle(
             start_date=resolved.start_date,
             end_date=resolved.end_date,
             norm_q=norm_q,
-            top_k=top_k,
+            top_k=effective_top_k,
         )
         aggregates["genre_focus"] = genre_bundle["genre_focus"]
         aggregates["genre_focus"]["resolution_source"] = genre_source
@@ -684,7 +762,7 @@ def collect_music_insights_bundle(
     # 5. Top Nghe si (doc lap)
     if "top_artists" in selected_tools and total_plays > 0:
         tools_used.append("top_artists")
-        top_artists = get_top_artists(user, resolved.start_dt, resolved.end_dt, limit=top_k)
+        top_artists = get_top_artists(user, resolved.start_dt, resolved.end_dt, limit=effective_top_k)
         aggregates["top_artists"] = [
             {
                 "name": a["name"],
@@ -719,7 +797,7 @@ def collect_music_insights_bundle(
     # 6. Top Bai hat (doc lap)
     if "top_tracks" in selected_tools and total_plays > 0:
         tools_used.append("top_tracks")
-        top_tracks = get_top_tracks(user, resolved.start_dt, resolved.end_dt, limit=top_k)
+        top_tracks = get_top_tracks(user, resolved.start_dt, resolved.end_dt, limit=effective_top_k)
         aggregates["top_tracks"] = [
             {
                 "name": t["name"],
@@ -750,7 +828,7 @@ def collect_music_insights_bundle(
     # 7. Top Album (doc lap)
     if "top_albums" in selected_tools and total_plays > 0:
         tools_used.append("top_albums")
-        top_albums = get_top_albums(user, resolved.start_dt, resolved.end_dt, limit=top_k)
+        top_albums = get_top_albums(user, resolved.start_dt, resolved.end_dt, limit=effective_top_k)
         aggregates["top_albums"] = [
             {"name": al["name"], "artists": al.get("artists", []), "play_count": al["play_count"]}
             for al in top_albums
@@ -863,7 +941,7 @@ def collect_music_insights_bundle(
     if "recommendations" in selected_tools:
         tools_used.append("knn_recommendations")
         rec_info = tool_user_knn_recommendations(
-            user, query_text, resolved.start_dt, resolved.end_dt, top_k=top_k, session_entities=entities_view
+            user, query_text, resolved.start_dt, resolved.end_dt, top_k=effective_top_k, session_entities=entities_view
         )
         aggregates["knn_recommendations"] = rec_info
         if rec_info.get("has_seed") and rec_info.get("recommendations"):
@@ -912,6 +990,35 @@ def collect_music_insights_bundle(
 
     detected_entities["last_tools"] = tools_used
 
+    artist_overview = (aggregates.get("artist_focus") or {}).get("overview")
+    genre_overview = (aggregates.get("genre_focus") or {}).get("overview")
+    zero_target_plays = (
+        total_plays == 0
+        or (
+            isinstance(artist_overview, dict)
+            and (not artist_overview.get("found_artist") or int(artist_overview.get("total_plays") or 0) == 0)
+        )
+        or (isinstance(genre_overview, dict) and int(genre_overview.get("total_plays") or 0) == 0)
+    )
+    suggested_scopes = _build_quick_scope_options(
+        query_text,
+        resolved,
+        zero_target_plays=zero_target_plays,
+    )
+    if zero_target_plays:
+        all_time_user_plays = ListeningHistory.objects.filter(user=user).count()
+        artist_all_time_plays = (
+            get_artist_all_time_plays(user, artist_overview["artist_name"])
+            if isinstance(artist_overview, dict) and artist_overview.get("artist_name")
+            else None
+        )
+        aggregates["zero_data_context"] = {
+            "current_period_has_data": False,
+            "all_time_user_plays": all_time_user_plays,
+            "artist_all_time_plays": artist_all_time_plays,
+            "suggested_period_labels": [opt.label for opt in suggested_scopes],
+        }
+
     if resolved.inherited_from_session:
         scope_note = (
             f"Tiếp tục sử dụng khoảng thời gian từ bộ nhớ phiên ({resolved.label}: "
@@ -938,4 +1045,5 @@ def collect_music_insights_bundle(
         "tools_used": tools_used,
         "detected_entities": detected_entities,
         "memory_baseline_ops": memory_baseline_ops,
+        "suggested_scopes": suggested_scopes,
     }
