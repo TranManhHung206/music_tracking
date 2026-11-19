@@ -916,3 +916,239 @@ class HybridAssistantTestCase(TestCase):
         self.assertEqual(r2.status_code, status.HTTP_200_OK)
         self.assertIn("<session_persistent_memory>", captured_payloads[1])
         self.assertIn("display_format: bảng Markdown", captured_payloads[1])
+
+    def test_vpop_artist_list_query_routes_to_genre_tools_not_unknown_artist(self):
+        """
+        Kiem thu cau hoi 'Liet ke 5 nghe si VPOP tui nghe nhieu nhat':
+        - Khong doan nham 'VPOP tui nghe' thanh ten nghe si khong ton tai.
+        - Dinh tuyen dung sang genre_summary (V-Pop) -> genre_listening_overview + genre_top_artists.
+        - Hien thi dung danh sach nghe si V-Pop thuc te va Evidence cua V-Pop.
+        """
+        now = timezone.now()
+        today = timezone.localdate()
+
+        vpop_1 = Artist.objects.create(spotify_id="art_sontung_vpop", name="Sơn Tùng M-TP")
+        alb_1 = Album.objects.create(spotify_id="alb_st_vpop", name="m-tp M-TP", image_url="")
+        alb_1.artists.add(vpop_1)
+        trk_1 = Track.objects.create(
+            spotify_id="trk_st_vpop",
+            name="Nơi Này Có Anh",
+            duration_ms=260000,
+            album=alb_1,
+            danceability=0.68,
+            energy=0.65,
+            valence=0.72,
+            acousticness=0.25,
+            tempo=112.0,
+            features_synced=True,
+            features_source="spotify",
+        )
+        trk_1.artists.add(vpop_1)
+
+        vpop_2 = Artist.objects.create(spotify_id="art_denvau_vpop", name="Đen Vâu")
+        alb_2 = Album.objects.create(spotify_id="alb_dv_vpop", name="Show Của Đen", image_url="")
+        alb_2.artists.add(vpop_2)
+        trk_2 = Track.objects.create(
+            spotify_id="trk_dv_vpop",
+            name="Nấu Ăn Cho Em",
+            duration_ms=245000,
+            album=alb_2,
+            danceability=0.64,
+            energy=0.58,
+            valence=0.62,
+            acousticness=0.40,
+            tempo=96.0,
+            features_synced=True,
+            features_source="spotify",
+        )
+        trk_2.artists.add(vpop_2)
+
+        for idx in range(3):
+            ListeningHistory.objects.create(
+                user=self.user_a,
+                track=trk_1,
+                played_at=now - timedelta(minutes=10 + idx * 5),
+            )
+        ListeningHistory.objects.create(
+            user=self.user_a,
+            track=trk_2,
+            played_at=now - timedelta(minutes=30),
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        week_mon = (today - timedelta(days=today.weekday())).isoformat()
+        week_sun = (today - timedelta(days=today.weekday()) + timedelta(days=6)).isoformat()
+        no_llm_env = {
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "LLM_BASE_URL": "",
+            "LLM_API_KEY": "",
+            "LLM_MODEL": "",
+            "OPENAI_BASE_URL": "",
+            "OPENAI_API_KEY": "",
+        }
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict("os.environ", no_llm_env, clear=False):
+                res = self.client.post(
+                    "/api/ai/assistant/query/",
+                    {
+                        "query": "Liệt kê 5 nghệ sĩ VPOP tui nghe nhiều nhất",
+                        "mode": "auto",
+                        "session_id": "vpop_genre_sid",
+                        "period_context": {
+                            "period_type": "week",
+                            "start_date": week_mon,
+                            "end_date": week_sun,
+                            "label": "Tuần này",
+                        },
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.json()
+        self.assertEqual(data["resolved_domain"], "music_insights")
+        self.assertIn("genre_listening_overview", data["meta"]["tools_used"])
+        self.assertIn("genre_top_artists", data["meta"]["tools_used"])
+        self.assertNotIn("artist_listening_overview", data["meta"]["tools_used"])
+        self.assertNotIn("VPOP tui nghe", data["answer"])
+        self.assertIn("Sơn Tùng M-TP", data["answer"])
+        ev_labels = [ev["label"] for ev in data["evidence"]]
+        self.assertIn("Thể loại: V-Pop", ev_labels)
+        self.assertIn("Nghệ sĩ nổi bật (V-Pop)", ev_labels)
+
+    def test_zero_data_and_missing_artist_use_llm_instead_of_hardcoded_guard(self):
+        """
+        Khi ky co 0 luot phat hoac khong tim thay nghe si, van goi LLM de tra loi tu nhien
+        kem zero_data_context va all_time_user_plays (khong ep qua zero_data_guard).
+        """
+        self.client.force_authenticate(user=self.user_a)
+        captured_payloads: list[str] = []
+
+        def fake_llm_zero_data(self_svc, messages):
+            captured_payloads.append(messages[-1]["content"])
+            return (
+                "Trong kỳ này chưa có lượt phát phù hợp, bạn thử chọn phạm vi rộng hơn bên dưới nhé.",
+                "openai_compatible",
+                "mock-model",
+            )
+
+        with patch.object(HybridAssistantService, "_try_openai_compatible_music", fake_llm_zero_data):
+            with patch(
+                "ai_engine.services.assistant.service.get_ai_provider_order",
+                return_value=["openai_compatible"],
+            ):
+                res_empty = self.client.post(
+                    "/api/ai/assistant/query/",
+                    {
+                        "query": "Tổng kết gu nghe nhạc của tôi",
+                        "mode": "music_insights",
+                        "session_id": "zero_llm_sid_1",
+                        "period_context": {
+                            "period_type": "month",
+                            "start_date": "2020-01-01",
+                            "end_date": "2020-01-31",
+                            "label": "Tháng 01/2020",
+                        },
+                    },
+                    format="json",
+                )
+                res_missing_artist = self.client.post(
+                    "/api/ai/assistant/query/",
+                    {
+                        "query": "Tổng hợp nghệ sĩ Nghệ Sĩ Không Tồn Tại trong tuần này",
+                        "mode": "music_insights",
+                        "session_id": "zero_llm_sid_2",
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(res_empty.status_code, status.HTTP_200_OK)
+        d_empty = res_empty.json()
+        self.assertEqual(d_empty["meta"]["model_name"], "mock-model")
+        self.assertNotEqual(d_empty["meta"]["model_name"], "zero_data_guard")
+        self.assertFalse(d_empty["meta"]["is_fallback"])
+        self.assertIn("chưa có lượt phát phù hợp", d_empty["answer"])
+
+        self.assertEqual(res_missing_artist.status_code, status.HTTP_200_OK)
+        d_missing = res_missing_artist.json()
+        self.assertEqual(d_missing["meta"]["model_name"], "mock-model")
+        self.assertNotEqual(d_missing["meta"]["model_name"], "zero_data_guard")
+        self.assertEqual(len(captured_payloads), 2)
+        for payload in captured_payloads:
+            self.assertIn("zero_data_context", payload)
+            self.assertIn("all_time_user_plays", payload)
+
+    def test_hybrid_suggested_scopes_included_when_period_omitted_and_omitted_when_explicit(self):
+        """
+        - Khi cau hoi khong neu moc thoi gian (dung ky Dashboard), tra ve suggested_scopes (>=2) khong trung ky dang chon.
+        - Khi cau hoi neu ro moc thoi gian va co du lieu, suggested_scopes la [].
+        """
+        self.client.force_authenticate(user=self.user_a)
+        today = timezone.localdate()
+        week_mon = (today - timedelta(days=today.weekday())).isoformat()
+        week_sun = (today - timedelta(days=today.weekday()) + timedelta(days=6)).isoformat()
+
+        no_llm_env = {
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "LLM_BASE_URL": "",
+            "LLM_API_KEY": "",
+            "LLM_MODEL": "",
+            "OPENAI_BASE_URL": "",
+            "OPENAI_API_KEY": "",
+        }
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict("os.environ", no_llm_env, clear=False):
+                res_omitted = self.client.post(
+                    "/api/ai/assistant/query/",
+                    {
+                        "query": "Top nghệ sĩ của tôi",
+                        "mode": "music_insights",
+                        "session_id": "quick_scope_sid_1",
+                        "period_context": {
+                            "period_type": "week",
+                            "start_date": week_mon,
+                            "end_date": week_sun,
+                            "label": "Tuần này",
+                        },
+                    },
+                    format="json",
+                )
+                res_explicit = self.client.post(
+                    "/api/ai/assistant/query/",
+                    {
+                        "query": "Top nghệ sĩ của tôi trong năm nay",
+                        "mode": "music_insights",
+                        "session_id": "quick_scope_sid_2",
+                        "period_context": {
+                            "period_type": "week",
+                            "start_date": week_mon,
+                            "end_date": week_sun,
+                            "label": "Tuần này",
+                        },
+                    },
+                    format="json",
+                )
+
+        self.assertEqual(res_omitted.status_code, status.HTTP_200_OK)
+        d_omit = res_omitted.json()
+        scopes = d_omit.get("suggested_scopes") or []
+        self.assertGreaterEqual(len(scopes), 2)
+        self.assertFalse(any(s["label"] == "Xem Tuần này" for s in scopes))
+
+        self.assertEqual(res_explicit.status_code, status.HTTP_200_OK)
+        d_exp = res_explicit.json()
+        self.assertEqual(d_exp.get("suggested_scopes"), [])

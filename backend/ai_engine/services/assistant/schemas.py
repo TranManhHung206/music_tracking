@@ -75,6 +75,7 @@ class AssistantQueryResult(BaseModel):
     resolved_domain: ResolvedDomainLiteral
     needs_clarification: bool = False
     clarification_options: list[AssistantClarificationOption] = Field(default_factory=list)
+    suggested_scopes: list[AssistantClarificationOption] = Field(default_factory=list)
     scope: AssistantScopeMeta
     evidence: list[AssistantEvidenceItem] = Field(default_factory=list)
     topics: list[AssistantTopicItem] = Field(default_factory=list)

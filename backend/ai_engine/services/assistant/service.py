@@ -56,7 +56,9 @@ MUSIC_GROUNDING_SYSTEM_PROMPT = """Bạn là MusicTrack Assistant - trợ lý đ
 Nhiệm vụ: Trả lời ngắn gọn, đúng trọng tâm, rõ ràng và tự nhiên bằng tiếng Việt có dấu dựa DUY NHẤT trên số liệu được cung cấp trong ngữ cảnh phiên và dữ liệu thống kê kèm theo.
 
 CÁC QUY TẮC BẮT BUỘC:
-1. TRUNG THỰC VỚI SỐ LIỆU: Chỉ nêu con số, tên bài hát, nghệ sĩ, album, thể loại và tỷ lệ thực sự có trong dữ liệu được cung cấp. Tuyệt đối không bịa đặt dữ liệu.
+1. TRUNG THỰC VỚI SỐ LIỆU & XỬ LÝ 0 LƯỢT PHÁT TỰ NHIÊN:
+   - Chỉ nêu con số, tên bài hát, nghệ sĩ, album, thể loại và tỷ lệ thực sự có trong dữ liệu được cung cấp. Tuyệt đối không bịa đặt dữ liệu.
+   - Khi trong kỳ đang xem có 0 lượt phát, không tìm thấy nghệ sĩ trong lịch sử, hoặc có dữ liệu `zero_data_context`, hãy trả lời tự nhiên, linh hoạt bằng tiếng Việt (không bịa thêm bài hát/lượt phát). Nếu `all_time_user_plays > 0` hoặc `artist_all_time_plays > 0`, hãy khéo léo cho biết kỳ hiện tại chưa có lượt phát nhưng lịch sử rộng hơn có dữ liệu, và mời bạn bấm chọn một mốc thời gian gợi ý ở bên dưới.
 2. HIỂU ĐÚNG NGỮ CẢNH THỐNG KÊ MUSICTRACK:
    - Các cụm như "lấy về <nghệ sĩ/thể loại>", "cho tui xem <nghệ sĩ>" luôn mang nghĩa tra cứu số liệu thống kê nghe nhạc trên MusicTrack, TUYỆT ĐỐI KHÔNG hiểu nhầm thành yêu cầu tải file nhạc MP3 hay giới thiệu tải nhạc từ nền tảng khác.
    - Tập trung trả lời thẳng câu hỏi hiện tại; không liệt kê lan man các chỉ số không liên quan.
@@ -629,36 +631,24 @@ class HybridAssistantService:
                 persistent_memory=music_ctx["persistent_memory"],
             )
             aggregates = bundle["aggregates"]
-            total_plays = int(aggregates["summary"]["total_plays"])
             scope: AssistantScopeMeta = bundle["scope"]
             artist_overview = (aggregates.get("artist_focus") or {}).get("overview")
             genre_overview = (aggregates.get("genre_focus") or {}).get("overview")
-            artist_zero_or_missing = isinstance(artist_overview, dict) and (
-                not artist_overview.get("found_artist") or int(artist_overview.get("total_plays") or 0) == 0
-            )
-            genre_zero = isinstance(genre_overview, dict) and int(genre_overview.get("total_plays") or 0) == 0
 
-            agent_memory_ops: list[dict] = []
-            if (total_plays == 0 and not artist_overview and not genre_overview) or artist_zero_or_missing or genre_zero:
-                answer = _build_music_fallback_answer(aggregates, scope.label)
-                provider_used = "local_music_synthesizer"
-                model_name = "zero_data_guard"
+            llm_answer, agent_memory_ops, provider_used, model_name = self._synthesize_music_with_llm_and_ops(
+                query_text=query_text,
+                aggregates=aggregates,
+                recent_turns=music_ctx["turns"],
+                compressed_memory=music_ctx["compressed_memory"],
+                active_entities=music_ctx["entities"],
+                persistent_memory_markdown=music_ctx["persistent_memory_markdown"],
+            )
+            if llm_answer:
+                answer = llm_answer
                 is_fallback = False
             else:
-                llm_answer, agent_memory_ops, provider_used, model_name = self._synthesize_music_with_llm_and_ops(
-                    query_text=query_text,
-                    aggregates=aggregates,
-                    recent_turns=music_ctx["turns"],
-                    compressed_memory=music_ctx["compressed_memory"],
-                    active_entities=music_ctx["entities"],
-                    persistent_memory_markdown=music_ctx["persistent_memory_markdown"],
-                )
-                if llm_answer:
-                    answer = llm_answer
-                    is_fallback = False
-                else:
-                    answer = _build_music_fallback_answer(aggregates, scope.label)
-                    is_fallback = True
+                answer = _build_music_fallback_answer(aggregates, scope.label)
+                is_fallback = True
 
             # Cap nhat Session Persistent Memory: nen xac thuc tu DB truoc, sau do ap dung lenh CRUD tu Agent
             tools_used = list(bundle["tools_used"])
@@ -696,6 +686,7 @@ class HybridAssistantService:
                 resolved_domain="music_insights",
                 needs_clarification=False,
                 clarification_options=[],
+                suggested_scopes=bundle.get("suggested_scopes", []),
                 scope=scope,
                 evidence=bundle["evidence"],
                 topics=[

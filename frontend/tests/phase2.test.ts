@@ -9,9 +9,14 @@ import {
   EMPTY_SUMMARY,
   PERIOD_SCOPED_SECTIONS,
   createEmptySnapshot,
+  createQueryPeriodDescriptor,
   createSectionStatusMap,
+  hasSamePeriodQueryScope,
+  isSameCalendarPeriod,
   isStaleDashboardResponse,
   resetPeriodScopedSnapshot,
+  resolveActivePeriodAfterSync,
+  resolvePeriodFromServerList,
   resolveTimeFilterForPeriod,
 } from '../src/hooks/dashboardDataState.ts';
 
@@ -116,6 +121,62 @@ describe('Phase 2 - Dashboard Data State & Race Condition Guard', () => {
     assert.equal(map.radar.loading, true);
     assert.equal(map.history.loading, false);
     assert.equal(map.persona.loading, false);
+  });
+
+  it('preserves period object identity and query scope across identical server syncs', () => {
+    const mockMonth = {
+      key: '2026-11',
+      label: 'Tháng 11/2026',
+      start_date: '2026-11-01',
+      end_date: '2026-11-30',
+      is_current: true,
+      play_count: 685,
+    };
+    const identicalClone = { ...mockMonth };
+    const updatedCountMonth = { ...mockMonth, play_count: 142 };
+    const nextMonth = {
+      key: '2026-12',
+      label: 'Tháng 12/2026',
+      start_date: '2026-12-01',
+      end_date: '2026-12-31',
+      is_current: true,
+      play_count: 10,
+    };
+
+    assert.equal(isSameCalendarPeriod(mockMonth, identicalClone), true);
+    assert.equal(isSameCalendarPeriod(mockMonth, updatedCountMonth), false);
+    assert.equal(hasSamePeriodQueryScope(mockMonth, updatedCountMonth), true);
+    assert.equal(hasSamePeriodQueryScope(mockMonth, nextMonth), false);
+    assert.equal(hasSamePeriodQueryScope(null, mockMonth), false);
+
+    assert.equal(resolvePeriodFromServerList(mockMonth, [identicalClone], 'current', null), mockMonth);
+    assert.equal(resolvePeriodFromServerList(mockMonth, [], 'current', null), mockMonth);
+
+    const serverResolved = resolvePeriodFromServerList(mockMonth, [updatedCountMonth], 'current', null);
+    assert.equal(serverResolved, updatedCountMonth);
+    assert.equal(hasSamePeriodQueryScope(mockMonth, serverResolved), true);
+
+    assert.equal(resolvePeriodFromServerList(mockMonth, [updatedCountMonth, nextMonth], 'specific', '2026-12'), nextMonth);
+    assert.equal(resolveActivePeriodAfterSync(mockMonth, [identicalClone]), mockMonth);
+    assert.equal(resolveActivePeriodAfterSync(null, [updatedCountMonth]), updatedCountMonth);
+    assert.equal(createQueryPeriodDescriptor('', '2026-11-01', '2026-11-30'), null);
+    assert.equal(createQueryPeriodDescriptor('2026-11', '2026-11-01', '2026-11-30')?.key, '2026-11');
+  });
+
+  it('guards useDashboardData, useDashboardPeriod, and useSpotifySync against redundant abort double-fetch', () => {
+    const dataHook = fs.readFileSync(path.join(SRC_DIR, 'hooks', 'useDashboardData.ts'), 'utf-8');
+    const periodHook = fs.readFileSync(path.join(SRC_DIR, 'hooks', 'useDashboardPeriod.ts'), 'utf-8');
+    const syncHook = fs.readFileSync(path.join(SRC_DIR, 'hooks', 'useSpotifySync.ts'), 'utf-8');
+
+    assert.ok(dataHook.includes('createQueryPeriodDescriptor'));
+    assert.ok(dataHook.includes('[periodKey, periodStartDate, periodEndDate]'));
+    assert.ok(dataHook.includes('[user, periodType, queryPeriod, refreshAllData]'));
+
+    assert.ok(periodHook.includes('resolvePeriodFromServerList'));
+    assert.ok(periodHook.includes('isSameCalendarPeriod'));
+
+    assert.ok(syncHook.includes('resolveActivePeriodAfterSync'));
+    assert.ok(syncHook.includes('hasSamePeriodQueryScope'));
   });
 });
 

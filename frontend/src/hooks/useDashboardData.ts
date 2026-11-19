@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { UserProfile } from '../types/auth';
 import type {
   CalendarPeriodType,
@@ -31,6 +31,7 @@ import {
   EMPTY_SUMMARY,
   EMPTY_WEEKLY_COMPARISON,
   PERIOD_SCOPED_SECTIONS,
+  createQueryPeriodDescriptor,
   createSectionStatusMap,
   isStaleDashboardResponse,
   resolveTimeFilterForPeriod,
@@ -337,23 +338,40 @@ export function useDashboardData({
     [user, selectedPeriod, periodType, setSectionStatus, onUnauthorized]
   );
 
+  const periodKey = selectedPeriod?.key ?? '';
+  const periodStartDate = selectedPeriod?.start_date ?? '';
+  const periodEndDate = selectedPeriod?.end_date ?? '';
+
+  // Chỉ đổi tham chiếu kỳ truy vấn khi key hoặc biên ngày thực sự đổi để tránh tự hủy request đang chạy
+  const queryPeriod = useMemo(
+    () => createQueryPeriodDescriptor(periodKey, periodStartDate, periodEndDate),
+    [periodKey, periodStartDate, periodEndDate]
+  );
+
   useEffect(() => {
-    if (!selectedPeriod) return;
-    if (!user && !isDemoMode) return;
+    if (!user || !queryPeriod) return;
     let isCancelled = false;
     Promise.resolve().then(() => {
       if (isCancelled) return;
-      if (user) {
-        void refreshAllData(selectedPeriod);
-      } else if (isDemoMode) {
-        populateDemoData(selectedPeriod, periodType);
-      }
+      void refreshAllData(queryPeriod);
     });
     return () => {
       isCancelled = true;
       abortControllerRef.current?.abort();
     };
-  }, [user, isDemoMode, periodType, selectedPeriod, refreshAllData, populateDemoData]);
+  }, [user, periodType, queryPeriod, refreshAllData]);
+
+  useEffect(() => {
+    if (user || !isDemoMode || !selectedPeriod) return;
+    let isCancelled = false;
+    Promise.resolve().then(() => {
+      if (isCancelled) return;
+      populateDemoData(selectedPeriod, periodType);
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [user, isDemoMode, periodType, selectedPeriod, populateDemoData]);
 
   return {
     summary,

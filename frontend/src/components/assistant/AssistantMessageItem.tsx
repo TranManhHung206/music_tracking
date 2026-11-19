@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
+  Calendar,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -74,6 +75,9 @@ export const AssistantMessageItem: React.FC<AssistantMessageItemProps> = ({
   const citationList = Array.isArray(res?.dev_citations) ? res.dev_citations : [];
   const clarificationOptions = Array.isArray(res?.clarification_options)
     ? res.clarification_options
+    : [];
+  const suggestedScopes = Array.isArray(res?.suggested_scopes)
+    ? res.suggested_scopes
     : [];
 
   const handleCopyFullResponse = async () => {
@@ -230,6 +234,27 @@ export const AssistantMessageItem: React.FC<AssistantMessageItemProps> = ({
                   <span>{opt.label}</span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Nut chuyen nhanh pham vi thoi gian (Hybrid Smart Default) */}
+          {!res?.needs_clarification && suggestedScopes.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[11px] text-text-muted">Chuyển nhanh phạm vi thời gian:</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestedScopes.map((opt, idx) => (
+                  <button
+                    key={`${opt.label}-${idx}`}
+                    type="button"
+                    onClick={() => onSelectClarification(opt.query, opt.mode)}
+                    disabled={isLoading}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800/75 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/70 hover:border-spotify-green/45 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-spotify-green shrink-0" />
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

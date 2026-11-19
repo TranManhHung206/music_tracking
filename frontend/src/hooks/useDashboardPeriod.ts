@@ -2,6 +2,11 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { CalendarPeriodType, CalendarPeriodItem } from '../types/analytics';
 import type { UserProfile } from '../types/auth';
 import { api, isRequestCanceled, getDynamicMockCalendarPeriods } from '../services/api';
+import {
+  hasSamePeriodQueryScope,
+  isSameCalendarPeriod,
+  resolvePeriodFromServerList,
+} from './dashboardDataState';
 
 interface UseDashboardPeriodOptions {
   user: UserProfile | null;
@@ -58,12 +63,19 @@ export function useDashboardPeriod({
     setAvailablePeriods(fallbackList);
     const defaultPeriod = fallbackList.find((p) => p.is_current) || fallbackList[0] || null;
     if (defaultPeriod) {
-      setSelectedPeriod(defaultPeriod);
+      setSelectedPeriod((prev) =>
+        prev &&
+        hasSamePeriodQueryScope(prev, defaultPeriod) &&
+        prev.label === defaultPeriod.label &&
+        prev.is_current === defaultPeriod.is_current
+          ? prev
+          : defaultPeriod
+      );
     }
   }, []);
 
   const handlePeriodSelect = useCallback((period: CalendarPeriodItem) => {
-    setSelectedPeriod(period);
+    setSelectedPeriod((prev) => (prev && isSameCalendarPeriod(prev, period) ? prev : period));
     if (period.is_current) {
       localStorage.setItem('user_calendar_selected_mode', 'current');
       localStorage.removeItem('user_calendar_selected_key');
@@ -86,22 +98,14 @@ export function useDashboardPeriod({
         if (controller.signal.aborted || reqId !== periodRequestIdRef.current) return;
         if (periods.length > 0) {
           setAvailablePeriods(periods);
-          setSelectedPeriod((prev) => {
-            const savedMode = localStorage.getItem('user_calendar_selected_mode');
-            const savedKey = localStorage.getItem('user_calendar_selected_key');
-
-            if (savedMode === 'specific' && savedKey) {
-              const matchedSaved = periods.find((p) => p.key === savedKey);
-              if (matchedSaved) return matchedSaved;
-            }
-
-            if (prev && !prev.is_current && savedMode === 'specific') {
-              const matchedPrev = periods.find((p) => p.key === prev.key);
-              if (matchedPrev) return matchedPrev;
-            }
-
-            return periods.find((p) => p.is_current) || periods[0];
-          });
+          setSelectedPeriod((prev) =>
+            resolvePeriodFromServerList(
+              prev,
+              periods,
+              localStorage.getItem('user_calendar_selected_mode'),
+              localStorage.getItem('user_calendar_selected_key')
+            )
+          );
         }
       } catch (err) {
         if (isRequestCanceled(err) || controller.signal.aborted || reqId !== periodRequestIdRef.current) {
