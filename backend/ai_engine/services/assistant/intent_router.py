@@ -69,10 +69,13 @@ WEBSITE_MEDIUM_PHRASES = (
 MUSIC_STRONG_PHRASES = (
     ("cua toi", 4),
     ("cua minh", 4),
+    ("cua tui", 4),
     ("toi nghe", 4),
     ("minh nghe", 4),
+    ("tui nghe", 4),
     ("cho toi", 3),
     ("cho minh", 3),
+    ("cho tui", 3),
     ("tuan nay", 4),
     ("tuan truoc", 4),
     ("thang nay", 4),
@@ -80,6 +83,8 @@ MUSIC_STRONG_PHRASES = (
     ("nam nay", 4),
     ("nam truoc", 4),
     ("nam ngoai", 4),
+    ("hom nay", 3),
+    ("hom qua", 3),
     ("7 ngay", 3),
     ("30 ngay", 3),
     ("nghe nhieu nhat", 4),
@@ -91,6 +96,7 @@ MUSIC_STRONG_PHRASES = (
     ("luot phat", 3),
     ("luot nghe", 3),
     ("thoi luong nghe", 3),
+    ("thoi gian nghe", 3),
     ("bao nhieu bai", 3),
     ("bao nhieu luot", 4),
     ("may lan", 3),
@@ -98,6 +104,7 @@ MUSIC_STRONG_PHRASES = (
     ("may gio", 3),
     ("cu dem", 4),
     ("goi y cho toi", 4),
+    ("goi y cho tui", 4),
     ("goi y bai", 3),
     ("bai nao tuong tu", 4),
     ("giong bai", 4),
@@ -105,6 +112,11 @@ MUSIC_STRONG_PHRASES = (
     ("so sanh ky", 4),
     ("tang hay giam", 4),
     ("audio features cua", 3),
+    ("nghe si do", 4),
+    ("ca si do", 4),
+    ("nghe si nay", 4),
+    ("ca si nay", 4),
+    ("bai hat do", 3),
 )
 
 MUSIC_MEDIUM_PHRASES = (
@@ -113,9 +125,20 @@ MUSIC_MEDIUM_PHRASES = (
     ("bai hat", 2),
     ("album", 2),
     ("the loai", 2),
+    ("dong nhac", 2),
     ("v-pop", 2),
+    ("vpop", 2),
     ("k-pop", 2),
+    ("kpop", 2),
     ("edm", 2),
+    ("electronic", 2),
+    ("dj", 2),
+    ("phonk", 2),
+    ("hip-hop", 2),
+    ("hiphop", 2),
+    ("rap", 2),
+    ("lofi", 2),
+    ("lo-fi", 2),
     ("valence", 2),
     ("energy", 2),
     ("danceability", 2),
@@ -142,6 +165,19 @@ FOLLOWUP_ONLY_CUES = (
     "ve dieu do",
     "cai do",
     "no la gi",
+    "cua ho",
+    "ve ho",
+    "cua anh ay",
+    "cua co ay",
+    "nguoi do",
+    "lay ve",
+    "xem ve",
+    "thong tin ve",
+    "the loai do",
+    "dong nhac do",
+    "nho giup",
+    "ghi nho",
+    "quen",
 )
 
 OUT_OF_SCOPE_TRIVIA_CUES = (
@@ -224,7 +260,9 @@ def route_assistant_intent(
     website_score = w_strong + w_med
     music_score = m_strong + m_med
 
-    if any(p in norm for p in ("toi", "minh")) and m_med > 0 and w_strong == 0:
+    if any(p in norm for p in ("toi", "minh", "tui")) and m_med > 0 and w_strong == 0:
+        music_score += 2
+    if re.search(r"\b(?:thang\s+(?:1[0-2]|0?[1-9])|nam\s+20\d{2}|quy\s+[1-4])\b", norm) and w_strong == 0:
         music_score += 2
     if "persona" in norm and any(p in norm for p in ("hoat dong", "tao ra", "co che")):
         website_score += 3
@@ -243,7 +281,7 @@ def route_assistant_intent(
             matched_cues=all_cues,
         )
 
-    is_short_followup = len(norm.split()) <= 8 and any(cue in norm for cue in FOLLOWUP_ONLY_CUES)
+    is_short_followup = len(norm.split()) <= 12 and any(cue in norm for cue in FOLLOWUP_ONLY_CUES)
 
     if music_score >= 3 and website_score >= 3 and abs(music_score - website_score) <= 1:
         return IntentRouteDecision(

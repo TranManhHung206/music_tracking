@@ -129,6 +129,14 @@ export const AssistantMessageItem: React.FC<AssistantMessageItemProps> = ({
                 Tổng hợp dự phòng tại máy chủ
               </span>
             )}
+            {res?.meta?.has_compressed_memory && (
+              <span
+                className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-950/50 text-purple-300 border border-purple-800/50"
+                title="Các lượt hội thoại cũ hơn 6 lượt đã được tự động nén thành bộ nhớ phiên"
+              >
+                Đã nén bộ nhớ phiên
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

@@ -156,6 +156,7 @@ export interface AssistantResponseMeta {
   is_fallback: boolean;
   tools_used: string[];
   session_turns: number;
+  has_compressed_memory?: boolean;
   memory_policy: string;
 }
 
