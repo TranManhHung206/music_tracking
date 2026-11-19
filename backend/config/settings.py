@@ -202,6 +202,21 @@ AI_PROVIDER = os.getenv('AI_PROVIDER', 'groq')
 AI_MODEL_GROQ = os.getenv('AI_MODEL_GROQ', 'openai/gpt-oss-120b')
 AI_MODEL_GROQ_BACKUP = os.getenv('AI_MODEL_GROQ_BACKUP', 'openai/gpt-oss-20b')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+AI_MODEL_GEMINI = os.getenv('AI_MODEL_GEMINI', 'gemini-2.5-flash')
+
+# OpenAI-Compatible Custom LLM (DeepSeek, Ollama, vLLM, Proxy...)
+LLM_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('OPENAI_BASE_URL', '')
+LLM_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('OPENAI_API_KEY', '')
+LLM_MODEL = os.getenv('LLM_MODEL') or os.getenv('AI_MODEL_CUSTOM', '')
+LLM_MODEL_BACKUP = os.getenv('LLM_MODEL_BACKUP', '')
+try:
+    LLM_TIMEOUT_SECONDS = max(5.0, float(os.getenv('LLM_TIMEOUT_SECONDS', '45')))
+except ValueError:
+    LLM_TIMEOUT_SECONDS = 45.0
+try:
+    AI_USER_COOLDOWN_SECONDS = max(0, int(os.getenv('AI_USER_COOLDOWN_SECONDS', '15')))
+except ValueError:
+    AI_USER_COOLDOWN_SECONDS = 15
 
 # Redis / Celery
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')

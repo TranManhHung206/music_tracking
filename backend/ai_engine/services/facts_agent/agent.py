@@ -5,10 +5,17 @@ Kiem soat chat che bang Harness Guardrails: Loop Budget, Tool Whitelist va Verif
 """
 
 import json
+import os
 import random
 import logging
 from django.conf import settings
 from django.core.cache import cache
+from ai_engine.services.llm_client import (
+    OpenAICompatibleClient,
+    extract_json_object,
+    get_ai_provider_order,
+    get_openai_compatible_config,
+)
 from .harness import (
     GROQ_TOOL_DEFINITIONS,
     execute_agent_tool,
@@ -141,7 +148,7 @@ def _execute_groq_react_loop(client, model_name: str, user, start_dt, end_dt, pe
                     content = "\n".join(lines).strip()
 
                 try:
-                    parsed_data = json.loads(content)
+                    parsed_data = extract_json_object(content)
                     raw_facts = parsed_data.get("facts", [])
                 except Exception:
                     raw_facts = []
@@ -183,18 +190,18 @@ def _execute_groq_react_loop(client, model_name: str, user, start_dt, end_dt, pe
 
 def run_music_facts_agent(user, start_dt, end_dt, period_label: str = "trong ká»³") -> dict:
     """
-    Thuc thi Agentic AI tim kiem Music Fun Facts voi kien truc du phong 3 tang:
-    1. Tang 1 (Primary): AI_MODEL_GROQ (openai/gpt-oss-120b).
-    2. Tang 2 (Backup): AI_MODEL_GROQ_BACKUP (openai/gpt-oss-20b).
-    3. Tang 3 (Fallback): Heuristic Engine tinh toan truc tiep tu DB.
+    Thuc thi Agentic AI tim kiem Music Fun Facts voi kien truc da nha cung cap:
+    - Ho tro OpenAI-compatible endpoint (DeepSeek, Ollama, Proxy...) theo AI_PROVIDER.
+    - Ho tro Groq (Primary -> Backup).
+    - Tang du phong cuoi: Heuristic Engine tinh toan truc tiep tu DB.
     """
-    groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or ''
+    custom_cfg = get_openai_compatible_config()
+    groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or os.getenv('GROQ_API_KEY', '')
     model_primary = getattr(settings, 'AI_MODEL_GROQ', 'openai/gpt-oss-120b')
     model_backup = getattr(settings, 'AI_MODEL_GROQ_BACKUP', 'openai/gpt-oss-20b')
 
-    # Neu chua cau hinh Groq API key, kich hoat ngay Fallback Heuristic
-    if not groq_api_key:
-        logger.info("Chua co GROQ_API_KEY, su dung Fallback Heuristic Engine cho Music Facts.")
+    if not custom_cfg.is_configured and not groq_api_key:
+        logger.info("Chua cau hinh API LLM, su dung Fallback Heuristic Engine cho Music Facts.")
         facts = generate_heuristic_facts(user, start_dt, end_dt)
         return {
             "facts": facts,
@@ -208,44 +215,62 @@ def run_music_facts_agent(user, start_dt, end_dt, period_label: str = "trong ká»
             }
         }
 
-    from groq import Groq
-    client = Groq(api_key=groq_api_key)
+    for provider_key in get_ai_provider_order():
+        if provider_key == "openai_compatible" and custom_cfg.is_configured:
+            client = OpenAICompatibleClient(custom_cfg)
+            for idx, m_name in enumerate(custom_cfg.model_candidates):
+                breaker_key = f"openai_compatible:{m_name}"
+                if is_model_rate_limited(breaker_key):
+                    continue
+                res = _execute_groq_react_loop(
+                    client=client,
+                    model_name=m_name,
+                    user=user,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    period_label=period_label,
+                )
+                if res:
+                    suffix = " (backup)" if idx > 0 else ""
+                    res["agent_meta"]["provider_used"] = f"openai_compatible:{m_name}{suffix}"
+                    return res
 
-    # 1. Thu nghiem Tang 1: Model Primary (120B)
-    if not is_model_rate_limited(model_primary):
-        logger.info(f"Khoi chay Tang 1 voi model chinh: {model_primary}")
-        result_primary = _execute_groq_react_loop(
-            client=client,
-            model_name=model_primary,
-            user=user,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            period_label=period_label,
-        )
-        if result_primary:
-            return result_primary
-    else:
-        logger.info(f"Tang 1 ({model_primary}) dang trong Circuit Breaker Cooldown, bo qua.")
+        elif provider_key == "groq" and groq_api_key:
+            from groq import Groq
+            client = Groq(api_key=groq_api_key)
 
-    # 2. Thu nghiem Tang 2: Model Backup (20B)
-    if not is_model_rate_limited(model_backup):
-        logger.info(f"Tang 1 that bai hoac rate limited. Kich hoat Tang 2 du phong: {model_backup}")
-        result_backup = _execute_groq_react_loop(
-            client=client,
-            model_name=model_backup,
-            user=user,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            period_label=period_label,
-        )
-        if result_backup:
-            result_backup["agent_meta"]["provider_used"] = f"groq:{model_backup} (backup)"
-            return result_backup
-    else:
-        logger.info(f"Tang 2 ({model_backup}) cung dang trong Circuit Breaker Cooldown, bo qua.")
+            if not is_model_rate_limited(model_primary):
+                logger.info(f"Khoi chay Tang 1 voi model chinh: {model_primary}")
+                result_primary = _execute_groq_react_loop(
+                    client=client,
+                    model_name=model_primary,
+                    user=user,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    period_label=period_label,
+                )
+                if result_primary:
+                    return result_primary
+            else:
+                logger.info(f"Tang 1 ({model_primary}) dang trong Circuit Breaker Cooldown, bo qua.")
 
-    # 3. Tang 3: Fallback Heuristic Engine
-    logger.warning("Ca 2 tang model Groq deu khong kha dung. Chuyen sang Tang 3: Fallback Heuristic Engine.")
+            if not is_model_rate_limited(model_backup):
+                logger.info(f"Tang 1 that bai hoac rate limited. Kich hoat Tang 2 du phong: {model_backup}")
+                result_backup = _execute_groq_react_loop(
+                    client=client,
+                    model_name=model_backup,
+                    user=user,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    period_label=period_label,
+                )
+                if result_backup:
+                    result_backup["agent_meta"]["provider_used"] = f"groq:{model_backup} (backup)"
+                    return result_backup
+            else:
+                logger.info(f"Tang 2 ({model_backup}) cung dang trong Circuit Breaker Cooldown, bo qua.")
+
+    logger.warning("Cac tang LLM deu khong kha dung. Chuyen sang Fallback Heuristic Engine.")
     fallback_facts = generate_heuristic_facts(user, start_dt, end_dt)
     return {
         "facts": fallback_facts,

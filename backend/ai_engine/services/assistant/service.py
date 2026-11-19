@@ -9,6 +9,12 @@ import os
 import re
 from django.conf import settings
 
+from ai_engine.services.llm_client import (
+    OpenAICompatibleClient,
+    get_ai_provider_order,
+    get_openai_compatible_config,
+    strip_reasoning_blocks,
+)
 from .schemas import (
     AssistantClarificationOption,
     AssistantEvidenceItem,
@@ -146,13 +152,90 @@ def _build_music_fallback_answer(aggregates: dict, scope_label: str) -> str:
 class HybridAssistantService:
     """Service dieu phoi MusicTrack Assistant cho ca Music Insights va Website Support."""
 
+    def _try_openai_compatible_music(self, messages: list[dict[str, str]]) -> tuple[str | None, str, str]:
+        config = get_openai_compatible_config()
+        if not config.is_configured:
+            return None, "", ""
+        try:
+            client = OpenAICompatibleClient(config)
+            for model_name in config.model_candidates:
+                try:
+                    res = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=0.25,
+                        max_tokens=700,
+                    )
+                    txt = _strip_emojis(strip_reasoning_blocks(res.choices[0].message.content or ""))
+                    if txt:
+                        return txt, "openai_compatible", model_name
+                except Exception as exc:
+                    logger.warning("Assistant OpenAI-compatible %s that bai: %s", model_name, exc)
+        except Exception as exc:
+            logger.warning("Khong the khoi tao OpenAI-compatible client: %s", exc)
+        return None, "", ""
+
+    def _try_groq_music(self, messages: list[dict[str, str]]) -> tuple[str | None, str, str]:
+        groq_key = getattr(settings, "GROQ_API_KEY", None) or os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            return None, "", ""
+        try:
+            from groq import Groq
+            client = Groq(api_key=groq_key)
+            models = [
+                getattr(settings, "AI_MODEL_GROQ", "openai/gpt-oss-120b"),
+                getattr(settings, "AI_MODEL_GROQ_BACKUP", "openai/gpt-oss-20b"),
+                "llama-3.1-8b-instant",
+            ]
+            for model_name in models:
+                try:
+                    res = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        temperature=0.25,
+                        max_tokens=700,
+                    )
+                    txt = _strip_emojis(strip_reasoning_blocks(res.choices[0].message.content or ""))
+                    if txt:
+                        return txt, "groq", model_name
+                except Exception as exc:
+                    logger.warning("Assistant Groq %s that bai: %s", model_name, exc)
+        except Exception as exc:
+            logger.warning("Khong the khoi tao Groq client: %s", exc)
+        return None, "", ""
+
+    def _try_gemini_music(self, user_payload: str) -> tuple[str | None, str, str]:
+        gemini_key = getattr(settings, "GEMINI_API_KEY", None) or os.getenv("GEMINI_API_KEY")
+        if not gemini_key:
+            return None, "", ""
+        configured_gemini = getattr(settings, "AI_MODEL_GEMINI", "") or os.getenv("AI_MODEL_GEMINI", "")
+        gem_models = []
+        for m in (configured_gemini, "gemini-2.5-flash", "gemini-1.5-flash"):
+            if m and m not in gem_models:
+                gem_models.append(m)
+        try:
+            from google import genai
+            client = genai.Client(api_key=gemini_key)
+            prompt_text = f"{MUSIC_GROUNDING_SYSTEM_PROMPT}\n\n{user_payload}"
+            for gem_model in gem_models:
+                try:
+                    res = client.models.generate_content(model=gem_model, contents=prompt_text)
+                    txt = _strip_emojis(strip_reasoning_blocks(getattr(res, "text", "") or ""))
+                    if txt:
+                        return txt, "gemini", gem_model
+                except Exception as exc:
+                    logger.warning("Assistant Gemini %s that bai: %s", gem_model, exc)
+        except Exception as exc:
+            logger.warning("Khong the khoi tao Gemini client: %s", exc)
+        return None, "", ""
+
     def _synthesize_music_with_llm(
         self,
         query_text: str,
         aggregates: dict,
         recent_turns: list[dict],
     ) -> tuple[str | None, str, str]:
-        """Goi Groq (120b -> 20b -> 8b) hoac Gemini voi chi so lieu tong hop."""
+        """Goi LLM theo thu tu AI_PROVIDER (OpenAI-compatible / Groq / Gemini) voi so lieu tong hop."""
         compact_turns = [
             {"user": t.get("query", ""), "assistant_summary": t.get("answer_summary", "")}
             for t in recent_turns[-4:]
@@ -172,48 +255,15 @@ class HybridAssistantService:
             {"role": "user", "content": user_payload},
         ]
 
-        groq_key = getattr(settings, "GROQ_API_KEY", None) or os.getenv("GROQ_API_KEY")
-        if groq_key:
-            try:
-                from groq import Groq
-                client = Groq(api_key=groq_key)
-                models = [
-                    getattr(settings, "AI_MODEL_GROQ", "openai/gpt-oss-120b"),
-                    getattr(settings, "AI_MODEL_GROQ_BACKUP", "openai/gpt-oss-20b"),
-                    "llama-3.1-8b-instant",
-                ]
-                for model_name in models:
-                    try:
-                        res = client.chat.completions.create(
-                            model=model_name,
-                            messages=messages,
-                            temperature=0.25,
-                            max_tokens=700,
-                        )
-                        txt = _strip_emojis(res.choices[0].message.content or "")
-                        if txt:
-                            return txt, "groq", model_name
-                    except Exception as exc:
-                        logger.warning("Assistant Groq %s that bai: %s", model_name, exc)
-            except Exception as exc:
-                logger.warning("Khong the khoi tao Groq client: %s", exc)
-
-        gemini_key = getattr(settings, "GEMINI_API_KEY", None) or os.getenv("GEMINI_API_KEY")
-        if gemini_key:
-            try:
-                from google import genai
-                client = genai.Client(api_key=gemini_key)
-                prompt_text = f"{MUSIC_GROUNDING_SYSTEM_PROMPT}\n\n{user_payload}"
-                for gem_model in ("gemini-2.5-flash", "gemini-1.5-flash"):
-                    try:
-                        res = client.models.generate_content(model=gem_model, contents=prompt_text)
-                        txt = _strip_emojis(getattr(res, "text", "") or "")
-                        if txt:
-                            return txt, "gemini", gem_model
-                    except Exception as exc:
-                        logger.warning("Assistant Gemini %s that bai: %s", gem_model, exc)
-            except Exception as exc:
-                logger.warning("Khong the khoi tao Gemini client: %s", exc)
+        runners = {
+            "openai_compatible": lambda: self._try_openai_compatible_music(messages),
+            "groq": lambda: self._try_groq_music(messages),
+            "gemini": lambda: self._try_gemini_music(user_payload),
+        }
+        for provider_key in get_ai_provider_order():
+            txt, provider_used, model_used = runners[provider_key]()
+            if txt:
+                return txt, provider_used, model_used
 
         return None, "local_music_synthesizer", "deterministic_music_v1"
 

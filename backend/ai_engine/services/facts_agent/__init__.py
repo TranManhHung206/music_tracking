@@ -136,13 +136,16 @@ def get_or_generate_music_facts(
         cache.set(cache_key, response_payload, timeout=3600)
         return response_payload
 
-    # 3. Khi nguoi dung bam nut kich hoat AI thu cong: Kiem tra Anti-Spam Cooldown 15s
-    cooldown_key = f"user_facts_cooldown:{user.id}"
-    if cache.get(cooldown_key):
-        cached_result = cache.get(cache_key)
-        if cached_result:
-            return cached_result
-    cache.set(cooldown_key, True, timeout=15)
+    # 3. Khi nguoi dung bam nut kich hoat AI thu cong: Kiem tra Anti-Spam Cooldown theo cau hinh
+    from django.conf import settings
+    cooldown_seconds = max(0, int(getattr(settings, 'AI_USER_COOLDOWN_SECONDS', 15) or 0))
+    if cooldown_seconds > 0:
+        cooldown_key = f"user_facts_cooldown:{user.id}"
+        if cache.get(cooldown_key):
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                return cached_result
+        cache.set(cooldown_key, True, timeout=cooldown_seconds)
 
     # Kich hoat Agent voi kien truc du phong 3 tang
     agent_result = run_music_facts_agent(user, start_dt, end_dt, period_label=period_label)

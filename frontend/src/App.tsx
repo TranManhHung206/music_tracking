@@ -216,7 +216,10 @@ export function App() {
         setPersona(newPersona);
         setPersonaCooldown(15);
         if (newPersona.provider_used?.includes('backup')) {
-          addToast('info', 'Đã phân tích AI Persona thành công qua model dự phòng (Groq 20B)!');
+          addToast(
+            'info',
+            `Đã phân tích AI Persona thành công qua model dự phòng (${newPersona.model_name || 'Backup'})!`,
+          );
         } else {
           addToast('success', 'Đã phân tích và cập nhật AI Persona mới thành công!');
         }
@@ -246,8 +249,15 @@ export function App() {
         setAgentMeta(res.agent_meta);
         setFactsCooldown(15);
         if (res.agent_meta?.provider_used?.includes('backup')) {
-          addToast('info', 'Aura Detective Agent đã dùng model dự phòng (Groq 20B) để điều tra thành công!');
-        } else if (res.agent_meta?.provider_used?.includes('groq')) {
+          addToast(
+            'info',
+            `Aura Detective Agent đã dùng model dự phòng (${res.agent_meta.model_name || 'Backup'}) để điều tra thành công!`,
+          );
+        } else if (
+          res.agent_meta &&
+          !res.agent_meta.is_fallback &&
+          res.agent_meta.provider_used !== 'db-analytics-preview'
+        ) {
           addToast('success', 'Aura Detective Agent đã điều tra và cập nhật các sự thật mới!');
         } else {
           addToast('info', 'AI đang hồi phục hạn mức, hệ thống đã dùng phân tích nội bộ tìm ra các sự thật này.');

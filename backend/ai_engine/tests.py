@@ -330,12 +330,15 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
                 }
             }
 
-        with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', side_effect=side_effect_exec):
-            result = run_music_facts_agent(self.user, start_dt, now)
-            self.assertIn('20b', result['agent_meta']['provider_used'])
-            self.assertFalse(result['agent_meta']['is_fallback'])
+        from django.test import override_settings
+        with override_settings(AI_PROVIDER='groq', GROQ_API_KEY='test-key', LLM_BASE_URL='', LLM_MODEL=''):
+            with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', side_effect=side_effect_exec):
+                result = run_music_facts_agent(self.user, start_dt, now)
+                self.assertIn('20b', result['agent_meta']['provider_used'])
+                self.assertFalse(result['agent_meta']['is_fallback'])
 
     def test_cascading_all_fail_to_heuristic(self):
+        from django.test import override_settings
         from ai_engine.services.facts_agent.agent import run_music_facts_agent
         from django.utils import timezone
 
@@ -343,10 +346,11 @@ class AIApiEndpointsTests(AIEngineBaseTestCase):
         start_dt = now - timezone.timedelta(days=7)
 
         # Gia lap ca Tang 1 va Tang 2 deu that bai
-        with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', return_value=None):
-            result = run_music_facts_agent(self.user, start_dt, now)
-            self.assertEqual(result['agent_meta']['provider_used'], 'heuristic-fallback')
-            self.assertTrue(result['agent_meta']['is_fallback'])
+        with override_settings(AI_PROVIDER='groq', GROQ_API_KEY='test-key', LLM_BASE_URL='', LLM_MODEL=''):
+            with patch('ai_engine.services.facts_agent.agent._execute_groq_react_loop', return_value=None):
+                result = run_music_facts_agent(self.user, start_dt, now)
+                self.assertEqual(result['agent_meta']['provider_used'], 'heuristic-fallback')
+                self.assertTrue(result['agent_meta']['is_fallback'])
 
     def test_music_facts_unauthenticated_rejected(self):
         self.client.logout()
@@ -549,6 +553,199 @@ class Phase1FactsSecurityAndTimezoneTests(DjangoTestCase):
             s_ny, e_ny, _ = parse_period_to_bounds("week")
             self.assertEqual(timezone.localdate(s_ny).isoformat(), "2026-09-28")
             self.assertEqual(timezone.localdate(e_ny).isoformat(), "2026-10-04")
+
+
+class OpenAICompatibleLLMClientTests(DjangoTestCase):
+    """Kiem thu client OpenAI-compatible (DeepSeek / Custom DNS) va dieu phoi da nha cung cap."""
+
+    def test_url_normalization_and_provider_order(self):
+        from django.test import override_settings
+        from ai_engine.services.llm_client import (
+            get_ai_provider_order,
+            normalize_openai_chat_completions_url,
+        )
+
+        self.assertEqual(
+            normalize_openai_chat_completions_url("api.deepseek.local"),
+            "https://api.deepseek.local/v1/chat/completions",
+        )
+        self.assertEqual(
+            normalize_openai_chat_completions_url("https://api.deepseek.local/v1/"),
+            "https://api.deepseek.local/v1/chat/completions",
+        )
+        self.assertEqual(
+            normalize_openai_chat_completions_url("localhost:11434/v1"),
+            "http://localhost:11434/v1/chat/completions",
+        )
+        self.assertEqual(
+            normalize_openai_chat_completions_url("https://gw.example.com/custom/v1/chat/completions"),
+            "https://gw.example.com/custom/v1/chat/completions",
+        )
+
+        with override_settings(AI_PROVIDER="openai_compatible"):
+            self.assertEqual(get_ai_provider_order()[0], "openai_compatible")
+        with override_settings(AI_PROVIDER="deepseek"):
+            self.assertEqual(get_ai_provider_order()[0], "openai_compatible")
+        with override_settings(AI_PROVIDER="gemini"):
+            self.assertEqual(get_ai_provider_order()[0], "gemini")
+
+    def test_extract_json_object_strips_think_blocks_and_fences(self):
+        from ai_engine.services.llm_client import extract_json_object, strip_reasoning_blocks
+
+        raw = "<think>\nSuy luan noi bo...\n</think>\n```json\n{\"persona_title\": \"Night Owl\", \"tagline\": \"chill\"}\n```"
+        self.assertNotIn("<think>", strip_reasoning_blocks(raw))
+        parsed = extract_json_object(raw)
+        self.assertEqual(parsed["persona_title"], "Night Owl")
+
+    def test_openai_compatible_client_retries_without_response_format_on_400(self):
+        from unittest.mock import MagicMock, patch
+        from ai_engine.services.llm_client import OpenAICompatibleClient, OpenAICompatibleConfig
+
+        cfg = OpenAICompatibleConfig(
+            base_url="api.deepseek-test.local",
+            api_key="test-key-xyz",
+            model="deepseek-v4.1",
+            timeout_seconds=15.0,
+        )
+        client = OpenAICompatibleClient(cfg)
+
+        resp_400 = MagicMock(status_code=400)
+        resp_200 = MagicMock(status_code=200)
+        resp_200.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": "<think>ok</think>{\"ok\": true}"}}]
+        }
+
+        captured_payloads = []
+
+        def fake_post(url, headers=None, json=None):
+            captured_payloads.append((url, headers, dict(json or {})))
+            return resp_400 if len(captured_payloads) == 1 else resp_200
+
+        with patch("ai_engine.services.llm_client.httpx.Client") as mock_httpx:
+            mock_httpx.return_value.__enter__.return_value.post.side_effect = fake_post
+            msg = client.create_chat_completion(
+                model="deepseek-v4.1",
+                messages=[{"role": "user", "content": "hi"}],
+                response_format={"type": "json_object"},
+            )
+
+        self.assertEqual(len(captured_payloads), 2)
+        self.assertEqual(captured_payloads[0][0], "https://api.deepseek-test.local/v1/chat/completions")
+        self.assertEqual(captured_payloads[0][1]["Authorization"], "Bearer test-key-xyz")
+        self.assertIn("response_format", captured_payloads[0][2])
+        self.assertNotIn("response_format", captured_payloads[1][2])
+        self.assertIn('"ok": true', msg.content)
+
+    def test_all_four_ai_modules_use_openai_compatible_when_configured(self):
+        from datetime import timedelta
+        from unittest.mock import MagicMock, patch
+        from django.contrib.auth.models import User
+        from django.test import override_settings
+        from django.utils import timezone
+        from tracker.models import ListeningHistory, Track
+        from ai_engine.services.ai_persona import generate_and_save_persona
+        from ai_engine.services.facts_agent.agent import run_music_facts_agent
+        from ai_engine.services.rag.service import CodebaseRAGService
+        from ai_engine.services.assistant.service import HybridAssistantService
+
+        user = User.objects.create_user(username="deepseek_user", password="pw")
+        trk = Track.objects.create(spotify_id="ds_trk_1", name="Test Track", duration_ms=180000)
+        now = timezone.now()
+        ListeningHistory.objects.create(user=user, track=trk, played_at=now - timedelta(minutes=5))
+
+        env_overrides = {
+            "AI_PROVIDER": "openai_compatible",
+            "LLM_BASE_URL": "https://deepseek.internal.example/v1",
+            "LLM_API_KEY": "secret-token-sample",
+            "LLM_MODEL": "deepseek-v4.1",
+            "GROQ_API_KEY": "",
+            "GEMINI_API_KEY": "",
+        }
+
+        persona_json = (
+            '{"persona_title": "DeepSeek Explorer", "tagline": "Nghe nhac khong gioi han.", '
+            '"vibe_summary": "Ban nghe deu dan.", "mood_distribution": {"energetic": 50, "melancholic": 20, "focused": 30}, '
+            '"recommended_listening_time": "21:00 - 23:00", "ai_advice": "Hay tiep tuc kham pha."}'
+        )
+        facts_json = (
+            '{"facts": ['
+            '{"id": "f1", "category": "repeat_loop", "badge": "Loop", "title": "Bai hat yeu thich", '
+            '"description": "Ban da phat bai nay nhieu lan.", "metric_highlight": "1 lan", "evidence": "Test Track"},'
+            '{"id": "f2", "category": "night_owl", "badge": "Dem", "title": "Khung gio dem", '
+            '"description": "Ban hay nghe nhac luc toi muon.", "metric_highlight": "21h", "evidence": "Test Track"},'
+            '{"id": "f3", "category": "contrast", "badge": "Vibe", "title": "Da sac thai", '
+            '"description": "Ban chuyen doi nhip dieu linh hoat.", "metric_highlight": "100%", "evidence": "Test Track"}'
+            ']}'
+        )
+
+        with override_settings(**env_overrides):
+            # 1. AI Music Persona
+            with patch("ai_engine.services.llm_client.OpenAICompatibleClient._post_payload") as mock_post:
+                mock_post.return_value = MagicMock(
+                    status_code=200,
+                    json=lambda: {"choices": [{"message": {"role": "assistant", "content": persona_json}}]},
+                )
+                persona = generate_and_save_persona(user, period_type="monthly")
+            self.assertEqual(persona.provider_used, "openai_compatible")
+            self.assertEqual(persona.model_name, "deepseek-v4.1")
+
+            # 2. Aura Music Detective (ReAct tool call -> JSON synthesis)
+            tool_resp = MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {"name": "query_repeat_loops", "arguments": "{}"},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+            final_facts_resp = MagicMock(
+                status_code=200,
+                json=lambda: {"choices": [{"message": {"role": "assistant", "content": facts_json}}]},
+            )
+            with patch("ai_engine.services.llm_client.OpenAICompatibleClient._post_payload", side_effect=[tool_resp, final_facts_resp]):
+                facts_res = run_music_facts_agent(user, now - timedelta(days=7), now)
+            self.assertEqual(facts_res["agent_meta"]["provider_used"], "openai_compatible:deepseek-v4.1")
+            self.assertEqual(facts_res["agent_meta"]["model_name"], "deepseek-v4.1")
+            self.assertFalse(facts_res["agent_meta"]["is_fallback"])
+
+            # 3. Codebase / Website RAG _generate_answer
+            rag_svc = CodebaseRAGService()
+            with patch("ai_engine.services.llm_client.OpenAICompatibleClient._post_payload") as mock_post:
+                mock_post.return_value = MagicMock(
+                    status_code=200,
+                    json=lambda: {"choices": [{"message": {"role": "assistant", "content": "<think>plan</think>Tra loi tu DeepSeek [S1]."}}]},
+                )
+                rag_ans = rag_svc._generate_answer([{"role": "user", "content": "test"}])
+            self.assertEqual(rag_ans, "Tra loi tu DeepSeek [S1].")
+
+            # 4. Hybrid Assistant Music Insights
+            assistant_svc = HybridAssistantService()
+            with patch("ai_engine.services.llm_client.OpenAICompatibleClient._post_payload") as mock_post:
+                mock_post.return_value = MagicMock(
+                    status_code=200,
+                    json=lambda: {"choices": [{"message": {"role": "assistant", "content": "Ban co 1 luot phat trong ky."}}]},
+                )
+                txt, prov, mod = assistant_svc._synthesize_music_with_llm(
+                    "Tong ket tuan nay",
+                    {"summary": {"total_plays": 1}},
+                    [],
+                )
+            self.assertEqual(prov, "openai_compatible")
+            self.assertEqual(mod, "deepseek-v4.1")
+            self.assertIn("1 luot phat", txt)
+
 
 
 

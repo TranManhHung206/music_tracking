@@ -16,14 +16,17 @@ interface PersonaCardProps {
   cooldownSeconds?: number;
 }
 
-function getProviderLabel(providerUsed?: string): string {
+function getProviderLabel(providerUsed?: string, modelName?: string): string {
   if (!providerUsed) return 'AI Music Persona';
   const lower = providerUsed.toLowerCase();
-  if (lower.includes('backup') || lower.includes('20b')) return 'Groq 20B Backup';
+  if (lower.includes('backup') || lower.includes('20b')) {
+    return modelName ? `${modelName} (Dự phòng)` : 'Model Dự phòng';
+  }
+  if (lower.includes('openai_compatible')) return modelName || 'OpenAI-Compatible AI';
   if (lower.includes('groq')) return 'Groq LPU';
-  if (lower.includes('gemini')) return 'Google Gemini';
+  if (lower.includes('gemini')) return modelName || 'Google Gemini';
   if (lower.includes('heuristic')) return 'Phân tích nội bộ';
-  return providerUsed;
+  return modelName || providerUsed;
 }
 
 export const PersonaCard: React.FC<PersonaCardProps> = ({
@@ -124,7 +127,7 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
                 AI Music Persona
               </span>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 font-mono">
-                {getProviderLabel(persona.provider_used)}
+                {getProviderLabel(persona.provider_used, persona.model_name)}
               </span>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-obsidian-bg text-text-muted border border-slate-800">
                 Cửa sổ: 30 ngày gần nhất (độc lập kỳ lọc)

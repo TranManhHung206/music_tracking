@@ -126,7 +126,9 @@ export const MusicFactsSection: React.FC<MusicFactsSectionProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>
                 {agentMeta.provider_used.includes('backup')
-                  ? 'Groq 20B Backup'
+                  ? `${agentMeta.model_name || 'Backup Model'} (Dự phòng)`
+                  : agentMeta.provider_used.includes('openai_compatible')
+                  ? `${agentMeta.model_name || 'OpenAI-Compatible'} (${agentMeta.tools_called.length} Tools)`
                   : agentMeta.provider_used.includes('groq')
                   ? `Groq LPU (${agentMeta.tools_called.length} Tools)`
                   : agentMeta.provider_used === 'db-analytics-preview'

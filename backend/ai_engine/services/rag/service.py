@@ -12,6 +12,12 @@ from django.core.cache import cache
 
 from .config import get_rag_config
 from .schemas import RAGQueryResponse, CitationItem
+from ai_engine.services.llm_client import (
+    OpenAICompatibleClient,
+    get_ai_provider_order,
+    get_openai_compatible_config,
+    strip_reasoning_blocks,
+)
 from .ingestion.pipeline import IngestionPipeline
 from .vectorstore.chroma_store import ChromaStore
 from .vectorstore.bm25_store import BM25Store
@@ -134,50 +140,90 @@ class CodebaseRAGService:
 
         return response
 
-    def _generate_answer(self, messages: list[dict[str, str]]) -> str:
-        """Goi Groq hoac fallback sang Gemini / Local Heuristic."""
-        # 1. Thu goi Groq LLM
+    def _try_openai_compatible(self, messages: list[dict[str, str]]) -> str | None:
+        config = get_openai_compatible_config()
+        if not config.is_configured:
+            return None
+        client = OpenAICompatibleClient(config)
+        for model_name in config.model_candidates:
+            try:
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=800,
+                )
+                content = strip_reasoning_blocks(completion.choices[0].message.content or "")
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning("RAG OpenAI-compatible model %s gap su co: %s", model_name, e)
+        return None
+
+    def _try_groq(self, messages: list[dict[str, str]]) -> str | None:
         groq_api_key = getattr(settings, "GROQ_API_KEY", None) or os.getenv("GROQ_API_KEY")
-        if groq_api_key:
-            from groq import Groq
-            client = Groq(api_key=groq_api_key)
-            models_to_try = [
-                getattr(settings, "AI_MODEL_GROQ", "openai/gpt-oss-120b"),
-                getattr(settings, "AI_MODEL_GROQ_BACKUP", "openai/gpt-oss-20b"),
-                "llama-3.1-8b-instant",
-            ]
-            for model_name in models_to_try:
-                try:
-                    completion = client.chat.completions.create(
-                        model=model_name,
-                        messages=messages,
-                        temperature=0.1,
-                        max_tokens=800,
-                    )
-                    content = completion.choices[0].message.content or ""
-                    if content.strip():
-                        return content.strip()
-                except Exception as e:
-                    logger.warning("Groq model %s gap su co: %s", model_name, e)
+        if not groq_api_key:
+            return None
+        from groq import Groq
+        client = Groq(api_key=groq_api_key)
+        models_to_try = [
+            getattr(settings, "AI_MODEL_GROQ", "openai/gpt-oss-120b"),
+            getattr(settings, "AI_MODEL_GROQ_BACKUP", "openai/gpt-oss-20b"),
+            "llama-3.1-8b-instant",
+        ]
+        for model_name in models_to_try:
+            try:
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=800,
+                )
+                content = strip_reasoning_blocks(completion.choices[0].message.content or "")
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning("Groq model %s gap su co: %s", model_name, e)
+        return None
 
-        # 2. Thu goi Gemini LLM neu Groq gap loi
+    def _try_gemini(self, messages: list[dict[str, str]]) -> str | None:
         gemini_api_key = getattr(settings, "GEMINI_API_KEY", None) or os.getenv("GEMINI_API_KEY")
-        if gemini_api_key:
-            for gemini_model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
-                try:
-                    from google import genai
-                    client = genai.Client(api_key=gemini_api_key)
-                    prompt_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
-                    res = client.models.generate_content(
-                        model=gemini_model,
-                        contents=prompt_text,
-                    )
-                    if res and res.text and res.text.strip():
-                        return res.text.strip()
-                except Exception as e:
-                    logger.warning("Gemini model %s gap su co: %s", gemini_model, e)
+        if not gemini_api_key:
+            return None
+        configured_gemini = getattr(settings, "AI_MODEL_GEMINI", "") or os.getenv("AI_MODEL_GEMINI", "")
+        gemini_models = [m for m in [configured_gemini, "gemini-2.5-flash", "gemini-1.5-flash"] if m]
+        seen: list[str] = []
+        for m in gemini_models:
+            if m not in seen:
+                seen.append(m)
+        prompt_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+        for gemini_model in seen:
+            try:
+                from google import genai
+                client = genai.Client(api_key=gemini_api_key)
+                res = client.models.generate_content(
+                    model=gemini_model,
+                    contents=prompt_text,
+                )
+                content = strip_reasoning_blocks(getattr(res, "text", "") or "")
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning("Gemini model %s gap su co: %s", gemini_model, e)
+        return None
 
-        # 3. Fallback sang Escape Hatch neu khong co LLM ket noi
+    def _generate_answer(self, messages: list[dict[str, str]]) -> str:
+        """Goi LLM theo thu tu AI_PROVIDER (OpenAI-compatible / Groq / Gemini) kem Escape Hatch."""
+        runners = {
+            "openai_compatible": self._try_openai_compatible,
+            "groq": self._try_groq,
+            "gemini": self._try_gemini,
+        }
+        for provider_key in get_ai_provider_order():
+            answer = runners[provider_key](messages)
+            if answer:
+                return answer
+
         return ESCAPE_HATCH_PHRASE
 
     def _invalidate_query_cache(self) -> None:
