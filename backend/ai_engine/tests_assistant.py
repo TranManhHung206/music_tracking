@@ -117,8 +117,26 @@ class HybridAssistantTestCase(TestCase):
 
     def test_user_scope_and_session_isolation(self):
         self.client.force_authenticate(user=self.user_a)
-        with self.settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict(
+                "os.environ",
+                {
+                    "GROQ_API_KEY": "",
+                    "GEMINI_API_KEY": "",
+                    "LLM_BASE_URL": "",
+                    "LLM_API_KEY": "",
+                    "LLM_MODEL": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ):
                 res_a = self.client.post(
                     "/api/ai/assistant/query/",
                     {
@@ -138,8 +156,26 @@ class HybridAssistantTestCase(TestCase):
 
         # User B dung chung session_id nhung phai bi co lap hoan toan
         self.client.force_authenticate(user=self.user_b)
-        with self.settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict(
+                "os.environ",
+                {
+                    "GROQ_API_KEY": "",
+                    "GEMINI_API_KEY": "",
+                    "LLM_BASE_URL": "",
+                    "LLM_API_KEY": "",
+                    "LLM_MODEL": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ):
                 res_b = self.client.post(
                     "/api/ai/assistant/query/",
                     {
@@ -158,8 +194,26 @@ class HybridAssistantTestCase(TestCase):
     def test_music_question_routes_without_codebase_rag(self):
         self.client.force_authenticate(user=self.user_a)
         with patch.object(CodebaseRAGService, "query") as mock_rag:
-            with self.settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-                with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+            with self.settings(
+                GROQ_API_KEY="",
+                GEMINI_API_KEY="",
+                LLM_BASE_URL="",
+                LLM_API_KEY="",
+                LLM_MODEL="",
+            ):
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "GROQ_API_KEY": "",
+                        "GEMINI_API_KEY": "",
+                        "LLM_BASE_URL": "",
+                        "LLM_API_KEY": "",
+                        "LLM_MODEL": "",
+                        "OPENAI_BASE_URL": "",
+                        "OPENAI_API_KEY": "",
+                    },
+                    clear=False,
+                ):
                     res = self.client.post(
                         "/api/ai/assistant/query/",
                         {"query": "Audio features của tôi tuần này ra sao?", "mode": "auto"},
@@ -260,8 +314,26 @@ class HybridAssistantTestCase(TestCase):
 
     def test_period_scope_respects_dashboard_vs_requested_period(self):
         self.client.force_authenticate(user=self.user_a)
-        with self.settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict(
+                "os.environ",
+                {
+                    "GROQ_API_KEY": "",
+                    "GEMINI_API_KEY": "",
+                    "LLM_BASE_URL": "",
+                    "LLM_API_KEY": "",
+                    "LLM_MODEL": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ):
                 # 1. Theo ky dang chon tren Dashboard
                 res_dash = self.client.post(
                     "/api/ai/assistant/query/",
@@ -318,8 +390,26 @@ class HybridAssistantTestCase(TestCase):
         self.assertIn("gián đoạn", res_ws_err.json()["answer"].lower())
 
         # Kiem tra tách biệt domain trong session store va xoa session
-        with self.settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+        with self.settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict(
+                "os.environ",
+                {
+                    "GROQ_API_KEY": "",
+                    "GEMINI_API_KEY": "",
+                    "LLM_BASE_URL": "",
+                    "LLM_API_KEY": "",
+                    "LLM_MODEL": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ):
                 self.client.post(
                     "/api/ai/assistant/query/",
                     {

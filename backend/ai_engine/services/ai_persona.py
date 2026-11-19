@@ -8,8 +8,17 @@ Phan tich tam ly va ca tinh am nhac da nha cung cap:
 
 import json
 import logging
+import os
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
+
+from ai_engine.services.llm_client import (
+    OpenAICompatibleClient,
+    extract_json_object,
+    get_ai_provider_order,
+    get_openai_compatible_config,
+)
 
 from analytics.services.filters import get_time_range_bounds
 from analytics.services.calculations import (
@@ -82,11 +91,51 @@ def extract_user_music_context(user, period_type: str = 'monthly') -> dict:
         "audio_features_provenance": radar_data.get('provenance', {}),
     }
 
-from django.core.cache import cache
+def call_openai_compatible_inference(context_dict: dict) -> tuple[dict, str]:
+    """Goi endpoint OpenAI-compatible (DeepSeek, Ollama, vLLM, Proxy) qua cau hinh .env."""
+    config = get_openai_compatible_config()
+    if not config.is_configured:
+        raise ValueError("LLM_BASE_URL hoac LLM_MODEL chua duoc thiet lap.")
+
+    client = OpenAICompatibleClient(config)
+    user_prompt = f"Dữ liệu phân tích người dùng:\n{json.dumps(context_dict, ensure_ascii=False, indent=2)}"
+
+    candidates = [
+        m for m in config.model_candidates
+        if not cache.get(f"openai_compatible_circuit_breaker:{m}")
+    ] or config.model_candidates
+
+    last_error = None
+    for idx, model_name in enumerate(candidates):
+        try:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+            response_text = completion.choices[0].message.content or ""
+            parsed_json = extract_json_object(response_text)
+            suffix = " (backup)" if idx > 0 else ""
+            return parsed_json, f"openai_compatible:{model_name}{suffix}"
+        except Exception as e:
+            last_error = e
+            err_msg = str(e)
+            if "429" in err_msg or "rate_limit" in err_msg.lower():
+                logger.warning(f"Persona OpenAI-compatible {model_name} gap 429 Rate Limit. Khoa Circuit Breaker 60 giay.")
+                cache.set(f"openai_compatible_circuit_breaker:{model_name}", True, timeout=60)
+            else:
+                logger.warning(f"Persona OpenAI-compatible {model_name} that bai: {err_msg}")
+
+    raise last_error or RuntimeError("OpenAI-compatible inference that bai.")
+
 
 def call_groq_inference(context_dict: dict) -> tuple[dict, str]:
-    """Goi Groq API voi kien truc cascading: Thu 120b truoc, neu rate limit thi chuyen sang 20b."""
-    groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or ''
+    """Goi Groq API voi kien truc cascading: Thu primary truoc, neu rate limit thi chuyen sang backup."""
+    groq_api_key = getattr(settings, 'GROQ_API_KEY', '') or os.getenv('GROQ_API_KEY', '')
     if not groq_api_key:
         raise ValueError("GROQ_API_KEY khong duoc thiet lap.")
 
@@ -117,8 +166,8 @@ def call_groq_inference(context_dict: dict) -> tuple[dict, str]:
                 temperature=0.7,
                 response_format={"type": "json_object"},
             )
-            response_text = chat_completion.choices[0].message.content
-            parsed_json = json.loads(response_text)
+            response_text = chat_completion.choices[0].message.content or ""
+            parsed_json = extract_json_object(response_text)
             return parsed_json, f"groq:{model_name}"
         except Exception as e:
             last_error = e
@@ -133,21 +182,22 @@ def call_groq_inference(context_dict: dict) -> tuple[dict, str]:
 
 def call_gemini_inference(context_dict: dict) -> tuple[dict, str]:
     """Goi Google Gemini API lam kenh du phong fallback."""
-    gemini_key = getattr(settings, 'GEMINI_API_KEY', '') or ''
+    gemini_key = getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
     if not gemini_key:
         raise ValueError("GEMINI_API_KEY khong duoc thiet lap.")
 
+    gemini_model = getattr(settings, 'AI_MODEL_GEMINI', '') or os.getenv('AI_MODEL_GEMINI', 'gemini-2.0-flash')
     from google import genai
     client = genai.Client(api_key=gemini_key)
     user_prompt = f"{SYSTEM_PROMPT}\n\nDữ liệu phân tích người dùng:\n{json.dumps(context_dict, ensure_ascii=False, indent=2)}"
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model=gemini_model,
         contents=user_prompt,
         config={"response_mime_type": "application/json"}
     )
-    parsed_json = json.loads(response.text)
-    return parsed_json, "gemini:gemini-2.0-flash"
+    parsed_json = extract_json_object(response.text or "")
+    return parsed_json, f"gemini:{gemini_model}"
 
 def generate_heuristic_persona(context_dict: dict) -> tuple[dict, str]:
     """Sinh bao cao persona dua tren thuat toan tam ly hoc thuc nghiem neu chua co API key."""
@@ -208,25 +258,39 @@ def generate_heuristic_persona(context_dict: dict) -> tuple[dict, str]:
     return result, "heuristic:rule-engine"
 
 def generate_and_save_persona(user, period_type: str = 'monthly') -> AIMusicPersona:
-    """Tong hop ngu canh, goi AI Engine da tang va luu vao co so du lieu."""
+    """Tong hop ngu canh, goi AI Engine theo thu tu uu tien va luu vao co so du lieu."""
     context_dict = extract_user_music_context(user, period_type)
     persona_data = None
     provider_info = "unknown"
 
-    # 1. Thu nghiem Groq API
-    try:
-        persona_data, provider_info = call_groq_inference(context_dict)
-        logger.info(f"Groq Persona generated successfully for user {user.username}")
-    except Exception as e_groq:
-        logger.warning(f"Groq Persona inference failed: {e_groq}. Trying Gemini fallback...")
-        # 2. Thu nghiem Gemini API
+    provider_runners = {
+        "openai_compatible": (
+            lambda: get_openai_compatible_config().is_configured,
+            call_openai_compatible_inference,
+        ),
+        "groq": (
+            lambda: bool(getattr(settings, 'GROQ_API_KEY', '') or os.getenv('GROQ_API_KEY', '')),
+            call_groq_inference,
+        ),
+        "gemini": (
+            lambda: bool(getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')),
+            call_gemini_inference,
+        ),
+    }
+
+    for provider_key in get_ai_provider_order():
+        is_ready, runner = provider_runners[provider_key]
+        if not is_ready() and provider_key != "groq":
+            continue
         try:
-            persona_data, provider_info = call_gemini_inference(context_dict)
-            logger.info(f"Gemini Persona generated successfully for user {user.username}")
-        except Exception as e_gem:
-            logger.warning(f"Gemini Persona inference failed: {e_gem}. Falling back to Heuristic Engine.")
-            # 3. Fallback Heuristic
-            persona_data, provider_info = generate_heuristic_persona(context_dict)
+            persona_data, provider_info = runner(context_dict)
+            logger.info(f"Persona ({provider_key}) generated successfully for user {user.username}")
+            break
+        except Exception as exc:
+            logger.warning(f"Persona ({provider_key}) inference failed: {exc}")
+
+    if persona_data is None:
+        persona_data, provider_info = generate_heuristic_persona(context_dict)
 
     # Chuan hoa tong mood_distribution dung 100% neu AI tra ve le
     moods = persona_data.get('mood_distribution', {})

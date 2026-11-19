@@ -7,6 +7,7 @@ API Views cho ung dung AI Engine:
 """
 
 import logging
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -41,13 +42,15 @@ class PersonaGenerateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # Anti-spam cooldown 15 giay cho nguoi dung
-        cooldown_key = f"user_persona_cooldown:{request.user.id}"
-        if cache.get(cooldown_key):
-            latest = AIMusicPersona.objects.filter(user=request.user).first()
-            if latest:
-                return Response(AIMusicPersonaSerializer(latest).data, status=status.HTTP_200_OK)
-        cache.set(cooldown_key, True, timeout=15)
+        # Anti-spam cooldown theo cau hinh (mac dinh 15 giay, dat 0 trong .env neu tat)
+        cooldown_seconds = max(0, int(getattr(settings, 'AI_USER_COOLDOWN_SECONDS', 15) or 0))
+        if cooldown_seconds > 0:
+            cooldown_key = f"user_persona_cooldown:{request.user.id}"
+            if cache.get(cooldown_key):
+                latest = AIMusicPersona.objects.filter(user=request.user).first()
+                if latest:
+                    return Response(AIMusicPersonaSerializer(latest).data, status=status.HTTP_200_OK)
+            cache.set(cooldown_key, True, timeout=cooldown_seconds)
 
         serializer = GeneratePersonaRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

@@ -93,8 +93,13 @@ SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 SPOTIFY_REDIRECT_URI=http://localhost:8000/api/users/spotify/callback/
 
-# Cau hinh AI (Chon groq hoac gemini)
-AI_PROVIDER=groq
+# Cau hinh AI (Chon openai_compatible, groq hoac gemini)
+AI_PROVIDER=openai_compatible
+LLM_BASE_URL=https://your-llm-dns-endpoint/v1
+LLM_API_KEY=your_llm_api_key
+LLM_MODEL=deepseek-v4.1
+# Tuy chon khi dung Groq / Gemini hoac dat cooldown = 0 voi model khong gioi han rate limit
+AI_USER_COOLDOWN_SECONDS=0
 GROQ_API_KEY=your_groq_api_key
 AI_MODEL_GROQ=openai/gpt-oss-120b
 GEMINI_API_KEY=your_gemini_api_key

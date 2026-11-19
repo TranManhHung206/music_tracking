@@ -505,8 +505,26 @@ class FrontendBackendContractTests(APITestCase):
         from unittest.mock import patch
         from django.test import override_settings
         self.client.force_authenticate(user=self.user)
-        with override_settings(GROQ_API_KEY="", GEMINI_API_KEY=""):
-            with patch.dict("os.environ", {"GROQ_API_KEY": "", "GEMINI_API_KEY": ""}, clear=False):
+        with override_settings(
+            GROQ_API_KEY="",
+            GEMINI_API_KEY="",
+            LLM_BASE_URL="",
+            LLM_API_KEY="",
+            LLM_MODEL="",
+        ):
+            with patch.dict(
+                "os.environ",
+                {
+                    "GROQ_API_KEY": "",
+                    "GEMINI_API_KEY": "",
+                    "LLM_BASE_URL": "",
+                    "LLM_API_KEY": "",
+                    "LLM_MODEL": "",
+                    "OPENAI_BASE_URL": "",
+                    "OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ):
                 res = self.client.post(
                     '/api/ai/assistant/query/',
                     {
