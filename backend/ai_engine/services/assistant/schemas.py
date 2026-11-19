@@ -59,8 +59,9 @@ class AssistantResponseMeta(BaseModel):
     is_fallback: bool = False
     tools_used: list[str] = Field(default_factory=list)
     session_turns: int = 0
+    has_compressed_memory: bool = False
     memory_policy: str = (
-        "Lưu tối đa 6 lượt gần nhất mỗi miền trong phiên hiện tại (tối đa 30 phút), "
+        "Lưu 6 lượt chi tiết gần nhất và tự động nén các lượt cũ hơn thành bộ nhớ phiên (tối đa 30 phút), "
         "tách biệt dữ liệu âm nhạc và tài liệu website, có thể xóa ngay bất kỳ lúc nào."
     )
 

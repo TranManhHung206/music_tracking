@@ -67,17 +67,38 @@ def _sanitize_answer_for_end_user(answer: str) -> str:
     return cleaned
 
 
-def _maybe_enrich_followup_query(query_text: str, website_turns: list[dict]) -> str:
-    """Chi bo sung ngu canh Website Support truoc do khi cau hoi thuc su la cau noi tiep ngan."""
-    if not website_turns:
+def _maybe_enrich_followup_query(
+    query_text: str,
+    website_turns: list[dict],
+    compressed_memory: str = "",
+) -> str:
+    """Bo sung ngu canh Website Support tu luot gan nhat hoac bo nho nen khi gap cau hoi noi tiep."""
+    if not website_turns and not compressed_memory:
         return query_text
     tokens = query_text.strip().split()
     lowered = query_text.lower()
-    followup_hints = ("chi tiết hơn", "rõ hơn", "phần đó", "cơ chế đó", "còn sao", "như thế nào nữa")
-    if len(tokens) <= 7 and any(h in lowered for h in followup_hints):
-        last_q = str(website_turns[-1].get("query") or "").strip()
-        if last_q:
-            return f"{last_q} - {query_text}"
+    followup_hints = (
+        "chi tiết hơn",
+        "rõ hơn",
+        "phần đó",
+        "cơ chế đó",
+        "còn sao",
+        "như thế nào nữa",
+        "cái đó",
+        "tính năng đó",
+        "về điều đó",
+        "nhắc lại",
+        "lúc nãy",
+        "trước đó",
+    )
+    if len(tokens) <= 9 and any(h in lowered for h in followup_hints):
+        if website_turns:
+            last_q = str(website_turns[-1].get("query") or "").strip()
+            if last_q:
+                return f"{last_q} - {query_text}"
+        if compressed_memory:
+            last_mem_line = [ln.strip() for ln in compressed_memory.splitlines() if ln.strip()][-1]
+            return f"{last_mem_line[:160]} - {query_text}"
     return query_text
 
 
@@ -88,6 +109,7 @@ def query_website_support(
     top_k: int = 5,
     use_cache: bool = True,
     website_turns: list[dict] | None = None,
+    compressed_memory: str = "",
 ) -> dict:
     """
     Thuc thi truy van Website Support qua CodebaseRAGService,
@@ -100,7 +122,11 @@ def query_website_support(
         except ValueError:
             effective_mode = PipelineMode.FULL_CASCADE
 
-    effective_query = _maybe_enrich_followup_query(query_text, website_turns or [])
+    effective_query = _maybe_enrich_followup_query(
+        query_text,
+        website_turns or [],
+        compressed_memory=compressed_memory,
+    )
 
     try:
         rag_service = get_rag_service()

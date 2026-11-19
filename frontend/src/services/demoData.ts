@@ -982,29 +982,72 @@ export function buildDemoAssistantReply(
     '> Lưu ý: Thời lượng nghe là ước lượng cộng dồn từ độ dài chuẩn của bài hát, và phân bố thể loại được phân loại tự động bởi MusicTrack.',
   ].filter(Boolean);
 
-  const evidence: AssistantEvidenceItem[] = [
-    {
-      label: 'Lượt phát (Demo)',
-      value: `${totalPlays.toLocaleString()} lượt`,
-      detail: `${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau`,
-      is_estimate: false,
-      category: 'observed',
-    },
-    {
-      label: 'Thời lượng ước tính',
-      value: durationLabel,
-      detail: 'Tổng độ dài chuẩn các bài hát mẫu',
-      is_estimate: true,
-      category: 'estimate',
-    },
-    {
-      label: 'So sánh kỳ trước',
-      value: growthText,
-      detail: `${compSummary.peak_label} (${compSummary.peak_plays} lượt)`,
-      is_estimate: false,
-      category: 'calculated',
-    },
-  ];
+  const wantsArtistOnly =
+    (norm.includes('nghe si') || norm.includes('ca si')) &&
+    !norm.includes('bai hat') &&
+    !norm.includes('the loai') &&
+    !norm.includes('tong ket');
+
+  const matchedDemoGenre = bundle.genreData.genres.find((g) => {
+    const gNorm = normalizeDemoText(g.name);
+    if (gNorm.includes('edm') && (norm.includes('edm') || norm.includes('dj') || norm.includes('electronic'))) {
+      return true;
+    }
+    if (gNorm.includes('v-pop') && (norm.includes('v-pop') || norm.includes('vpop'))) {
+      return true;
+    }
+    if (gNorm.includes('acoustic') && (norm.includes('acoustic') || norm.includes('lofi') || norm.includes('lo-fi'))) {
+      return true;
+    }
+    if (gNorm.includes('us-uk') && (norm.includes('us-uk') || norm.includes('usuk'))) {
+      return true;
+    }
+    return false;
+  });
+
+  const evidence: AssistantEvidenceItem[] = matchedDemoGenre
+    ? [
+        {
+          label: `Thể loại: ${matchedDemoGenre.name} (Demo)`,
+          value: `${matchedDemoGenre.plays.toLocaleString()} lượt (${matchedDemoGenre.percentage}%)`,
+          detail: 'Phân loại bằng hệ thống phân tích của MusicTrack',
+          is_estimate: true,
+          category: 'estimate',
+        },
+      ]
+    : wantsArtistOnly && topArtist
+    ? [
+        {
+          label: 'Nghệ sĩ dẫn đầu (Demo)',
+          value: topArtist.name,
+          detail: `${topArtist.play_count} lượt (${Math.round((topArtist.play_count / totalPlays) * 1000) / 10}% tổng ${totalPlays.toLocaleString()} lượt)`,
+          is_estimate: false,
+          category: 'observed',
+        },
+      ]
+    : [
+        {
+          label: 'Lượt phát (Demo)',
+          value: `${totalPlays.toLocaleString()} lượt`,
+          detail: `${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau`,
+          is_estimate: false,
+          category: 'observed',
+        },
+        {
+          label: 'Thời lượng ước tính',
+          value: durationLabel,
+          detail: 'Tổng độ dài chuẩn các bài hát mẫu',
+          is_estimate: true,
+          category: 'estimate',
+        },
+        {
+          label: 'So sánh kỳ trước',
+          value: growthText,
+          detail: `${compSummary.peak_label} (${compSummary.peak_plays} lượt)`,
+          is_estimate: false,
+          category: 'calculated',
+        },
+      ];
 
   return {
     query,

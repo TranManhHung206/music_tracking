@@ -74,7 +74,7 @@ const EMPTY_GUIDANCE_BY_MODE: Record<
   auto: {
     title: 'Trò chuyện thông minh trên hai miền tri thức tách biệt',
     description:
-      'MusicTrack Assistant tự nhận diện câu hỏi về số liệu nghe nhạc cá nhân hoặc hướng dẫn sử dụng website. Phiên hội thoại lưu tối đa 6 lượt gần nhất mỗi miền trong 30 phút và có thể xóa bất kỳ lúc nào.',
+      'MusicTrack Assistant tự nhận diện câu hỏi về số liệu nghe nhạc cá nhân hoặc hướng dẫn sử dụng website. Phiên hội thoại lưu 6 lượt chi tiết gần nhất và tự động nén các lượt cũ hơn thành bộ nhớ phiên (30 phút), có thể xóa bất kỳ lúc nào.',
   },
   music_insights: {
     title: 'Phân tích chuyên sâu dữ liệu nghe nhạc Spotify của bạn',
