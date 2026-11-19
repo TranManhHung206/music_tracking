@@ -797,24 +797,65 @@ export function buildDemoAssistantReply(
   }
 
   if (resolvedDomain === 'website_support') {
-    let answer =
-      'MusicTrack tự động đồng bộ lịch sử phát gần nhất từ Spotify, chuẩn hóa theo múi giờ hiện tại của bạn và tổng hợp thành các biểu đồ xu hướng, ma trận khung giờ, chỉ số Audio Features cùng bộ gợi ý tương đồng KNN.';
+    let answer = [
+      '## Tổng quan hoạt động của MusicTrack',
+      '',
+      'MusicTrack tự động đồng bộ lịch sử phát gần nhất từ Spotify, chuẩn hóa theo múi giờ hiện tại của bạn và tổng hợp thành các bảng phân tích trực quan.',
+      '',
+      '### Các tính năng chính',
+      '',
+      '1. **Đồng bộ lịch sử phát:** Ghi nhận tự động theo chu kỳ kèm cơ chế chống trùng bản ghi.',
+      '2. **Trực quan hóa đa chiều:** Biểu đồ xu hướng, bản đồ nhiệt khung giờ, Radar 5D và phân bố thể loại.',
+      '3. **Gợi ý tương đồng KNN:** Tìm bài hát cùng âm hưởng dựa trên đặc trưng âm thanh.',
+      '',
+      '> Lưu ý: Bạn đang xem hướng dẫn trong Chế độ Xem thử. Đăng nhập Spotify để đồng bộ dữ liệu thực tế.',
+    ].join('\n');
     let topicTitle = 'Hướng dẫn sử dụng & Tổng quan MusicTrack';
     let topicCat = 'Tài liệu sản phẩm';
 
     if (norm.includes('trung') || norm.includes('dong bo') || norm.includes('scrobble')) {
-      answer =
-        'Hệ thống gắn dấu mốc thời gian chính xác đến từng bản ghi phát (`user + played_at`) nên dù bạn nghe lại cùng một bài hát nhiều lần ở các thời điểm khác nhau vẫn được đếm đầy đủ, đồng thời loại bỏ hoàn toàn bản ghi trùng nếu đồng bộ lặp lại.';
+      answer = [
+        '## Cơ chế chống trùng lặp khi đồng bộ Spotify',
+        '',
+        'Hệ thống gắn dấu mốc thời gian chính xác cho từng lượt phát theo cặp khóa `user + played_at`:',
+        '',
+        '1. **Nghe lại cùng một bài hát nhiều lần:** Mỗi lần phát có thời điểm `played_at` khác nhau nên vẫn được đếm đầy đủ.',
+        '2. **Đồng bộ lặp lại cùng khung giờ:** Bản ghi trùng khớp `user + played_at` sẽ bị bỏ qua tự động ở tầng cơ sở dữ liệu.',
+        '',
+        '> Quan trọng: Thời lượng nghe trên Dashboard được cộng dồn từ độ dài tiêu chuẩn của các bản nhạc đã ghi nhận.',
+      ].join('\n');
       topicTitle = 'Đồng bộ lịch sử nghe nhạc (Auto-Scrobble)';
       topicCat = 'Đồng bộ dữ liệu';
     } else if (norm.includes('bao mat') || norm.includes('rieng tu') || norm.includes('token')) {
-      answer =
-        'Mã truy cập Spotify được mã hóa đối xứng trước khi lưu và không bao giờ trả trực tiếp ra trình duyệt. Toàn bộ API dữ liệu cá nhân đều kiểm tra xác thực người dùng ở phía máy chủ và cô lập hoàn toàn giữa các tài khoản.';
+      answer = [
+        '## Bảo mật tài khoản Spotify và quyền riêng tư',
+        '',
+        'MusicTrack áp dụng bảo vệ đa lớp cho dữ liệu cá nhân của bạn:',
+        '',
+        '- **Mã hóa Token lưu trữ:** `access_token` và `refresh_token` của Spotify được mã hóa đối xứng trước khi lưu và không bao giờ trả trực tiếp ra trình duyệt.',
+        '- **Cô lập theo tài khoản:** Mọi API dữ liệu cá nhân đều xác thực người dùng ở phía máy chủ và chỉ truy vấn đúng dữ liệu thuộc tài khoản đang đăng nhập.',
+        '- **Quản lý phiên hội thoại:** Lịch sử trò chuyện trợ lý được tách riêng theo tài khoản và có thể xóa ngay lập tức bằng nút **Xóa hội thoại**.',
+        '',
+        '> Lưu ý: Trong Chế độ Xem thử, toàn bộ truy vấn trợ lý được mô phỏng cục bộ trên trình duyệt.',
+      ].join('\n');
       topicTitle = 'Xác thực Spotify & Bảo mật tài khoản';
       topicCat = 'Tài khoản & Bảo mật';
     } else if (norm.includes('knn') || norm.includes('goi y') || norm.includes('yeu to')) {
-      answer =
-        'Bộ gợi ý bài hát dùng thuật toán KNN có trọng số trên vector 5 đặc trưng âm thanh gồm độ dễ nhảy (Danceability), năng lượng (Energy), cảm xúc tích cực (Valence), chất mộc (Acousticness) và nhịp độ chuẩn hóa (Tempo) để đo mức độ tương đồng giữa các bài hát.';
+      answer = [
+        '## Cách hoạt động của bộ gợi ý bài hát tương đồng (KNN)',
+        '',
+        'Bộ gợi ý sử dụng thuật toán **K-Nearest Neighbors (KNN)** có trọng số trên vector 5 đặc trưng âm thanh:',
+        '',
+        '| Đặc trưng | Ý nghĩa phân tích | Thang đo |',
+        '|---|---|---:|',
+        '| `Danceability` | Độ bắt nhịp và tính khiêu vũ | 0.0 - 1.0 |',
+        '| `Energy` | Cường độ và độ sôi động | 0.0 - 1.0 |',
+        '| `Valence` | Sắc thái cảm xúc tích cực | 0.0 - 1.0 |',
+        '| `Acousticness` | Mức độ mộc mạc, ít điện tử | 0.0 - 1.0 |',
+        '| `Tempo` | Nhịp độ BPM chuẩn hóa | 0.0 - 1.0 |',
+        '',
+        '> Lưu ý: Điểm tương đồng là giá trị ước lượng do mô hình KNN tính toán dựa trên khoảng cách vector đặc trưng, không phải chỉ số chính thức từ Spotify.',
+      ].join('\n');
       topicTitle = 'Hệ thống Gợi ý Bài hát Tương đồng (KNN)';
       topicCat = 'Gợi ý âm nhạc';
     }
@@ -906,15 +947,39 @@ export function buildDemoAssistantReply(
       ? 'Hoạt động mới (kỳ trước: 0 lượt)'
       : `${(compSummary.growth_percentage ?? 0) > 0 ? '+' : ''}${compSummary.growth_percentage ?? 0}% so với ${bundle.weeklyComparison.previous_label}`;
 
+  const topTrackRows = bundle.topTracks
+    .slice(0, 4)
+    .map(
+      (t, idx) =>
+        `| ${idx + 1} | ${t.name} | ${t.artists.join(', ')} | ${t.play_count.toLocaleString()} |`
+    );
+
   const answerParts = [
-    `Trong kỳ **${label}** (dữ liệu mẫu đồng bộ với Dashboard), bạn có **${totalPlays.toLocaleString()} lượt phát** trên ${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau và ${bundle.summary.unique_artists_count} nghệ sĩ. Thời lượng ước tính khoảng **${durationLabel}**.`,
-    `- Xu hướng kỳ này: **${growthText}** (cao điểm tại ${compSummary.peak_label} với ${compSummary.peak_plays} lượt).`,
-    topTrack
-      ? `- Bài hát dẫn đầu: **${topTrack.name}** (${topTrack.artists.join(', ')}) với ${topTrack.play_count} lượt; nghệ sĩ nghe nhiều nhất là **${topArtist?.name || '-'}** (${topArtist?.play_count || 0} lượt).`
+    `## Tổng kết nghe nhạc kỳ ${label}`,
+    `Trong kỳ **${label}** (dữ liệu mẫu đồng bộ với Dashboard), bạn có **${totalPlays.toLocaleString()} lượt phát** trên **${bundle.summary.unique_tracks_count ?? 0} bài hát khác nhau** và **${bundle.summary.unique_artists_count} nghệ sĩ**. Thời lượng nghe ước tính khoảng **${durationLabel}**.`,
+    topTrackRows.length > 0
+      ? [
+          '### Top bài hát nổi bật',
+          '',
+          '| Hạng | Bài hát | Nghệ sĩ | Lượt phát |',
+          '|---:|---|---|---:|',
+          ...topTrackRows,
+        ].join('\n')
       : '',
-    topGenre
-      ? `- Thể loại nổi bật theo bộ phân loại của MusicTrack: **${topGenre.name}** (${topGenre.percentage}%).`
-      : '',
+    [
+      '### Điểm nhấn đáng chú ý',
+      '',
+      `- **Xu hướng kỳ này:** ${growthText} (cao điểm tại ${compSummary.peak_label} với ${compSummary.peak_plays} lượt).`,
+      topTrack
+        ? `- **Dẫn đầu bảng xếp hạng:** **${topTrack.name}** (${topTrack.artists.join(', ')}) với ${topTrack.play_count} lượt; nghệ sĩ nghe nhiều nhất là **${topArtist?.name || '-'}** (${topArtist?.play_count || 0} lượt).`
+        : '',
+      topGenre
+        ? `- **Thể loại chủ đạo:** **${topGenre.name}** (${topGenre.percentage}%).`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    '> Lưu ý: Thời lượng nghe là ước lượng cộng dồn từ độ dài chuẩn của bài hát, và phân bố thể loại được phân loại tự động bởi MusicTrack.',
   ].filter(Boolean);
 
   const evidence: AssistantEvidenceItem[] = [

@@ -46,6 +46,7 @@ Music Analytics Dashboard là nền tảng web giúp người dùng tự động
 ### 5. Trợ Lý Lai MusicTrack Assistant (Dữ Liệu Âm Nhạc & Hỗ Trợ Website)
 * **3 Chế Độ Hỏi Đáp Linh Hoạt:** Cho phép chọn chế độ `Tự động` (nhận diện ý định và hỏi làm rõ nếu câu hỏi mơ hồ), `Dữ liệu Âm nhạc` (hỏi đáp cá nhân hóa) hoặc `Hỗ trợ Website` (hướng dẫn sử dụng và giải đáp cơ chế).
 * **Phân Tích Dữ Liệu Âm Nhạc Cá Nhân Theo Kỳ:** Tự động đồng bộ với chu kỳ Tuần / Tháng / Năm đang chọn trên Dashboard (hoặc theo khoảng thời gian bạn nhắc trong câu hỏi) để giải đáp tổng lượt phát, giờ nghe, xu hướng so với kỳ trước, Top bài hát/nghệ sĩ/album/thể loại, khung giờ vàng và gợi ý bài hát tương đồng kèm căn cứ số liệu rõ ràng.
+* **Trình Bày Markdown GFM & Giao Diện Hội Thoại Đa Thiết Bị:** Hiển thị phản hồi trợ lý chuẩn định dạng với bảng phân tích có cuộn ngang riêng trên di động, tiêu đề phân cấp, danh sách, khối ghi chú/cảnh báo phân loại rõ ràng, khối mã có tô sáng cú pháp kèm nút sao chép từng đoạn mã hoặc toàn bộ câu trả lời, và cuộn hội thoại thông minh không làm gián đoạn khi đọc lại tin nhắn cũ.
 * **Hỗ Trợ Website Thân Thiện & Phân Quyền An Toàn:** Cung cấp hướng dẫn cách đồng bộ Spotify, bảo vệ quyền riêng tư, giải thích các chỉ số phân tích và tự động duy trì ngữ cảnh hội thoại nhiều lượt theo phiên; các tùy chọn quản trị hệ thống và thông tin kỹ thuật nội bộ được ẩn khỏi tài khoản người dùng thông thường.
 
 ### 6. Giao Diện Tối Đa Thiết Bị & Chia Sẻ Mạng Xã Hội
