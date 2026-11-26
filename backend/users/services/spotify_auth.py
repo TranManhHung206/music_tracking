@@ -15,6 +15,13 @@ SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_ME_URL = "https://api.spotify.com/v1/me"
 
+
+class SpotifyAuthError(ValueError):
+    """Ngoai le khi xac thuc hoac refresh token Spotify that bai do het han/thu hoi."""
+
+    pass
+
+
 REQUIRED_SCOPES = [
     "user-read-recently-played",
     "user-top-read",
@@ -22,19 +29,29 @@ REQUIRED_SCOPES = [
     "user-read-email",
 ]
 
-def get_spotify_session() -> requests.Session:
-    """Tao session kem User-Agent chuan trinh duyet va co che retry toi uu cho ket noi quoc te."""
+def get_spotify_session(retries: int = 1) -> requests.Session:
+    """Tao session kem User-Agent chuan trinh duyet va co che retry an toan (khong retry 429)."""
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "application/json",
     })
-    retry_strategy = Retry(
-        total=0,
-        backoff_factor=0.3,
-        status_forcelist=[429, 500, 502, 503, 504],
-        raise_on_status=False,
-    )
+    if retries > 0:
+        retry_strategy = Retry(
+            total=retries,
+            connect=retries,
+            read=retries,
+            status=retries,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=frozenset(["GET", "POST"]),
+            raise_on_status=False,
+        )
+    else:
+        retry_strategy = Retry(
+            total=0,
+            raise_on_status=False,
+        )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
@@ -86,7 +103,7 @@ def exchange_code_for_tokens(code: str) -> dict:
         "code": code,
         "redirect_uri": redirect_uri,
     }
-    session = get_spotify_session()
+    session = get_spotify_session(retries=0)
     response = session.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=(10, 20))
     if response.status_code != 200:
         raise ValueError(f"Spotify token exchange failed ({response.status_code}): {response.text}")
@@ -95,7 +112,7 @@ def exchange_code_for_tokens(code: str) -> dict:
 def fetch_spotify_profile(access_token: str) -> dict:
     """Lay thong tin profile nguoi dung tu Spotify API /me."""
     headers = {"Authorization": f"Bearer {access_token}"}
-    session = get_spotify_session()
+    session = get_spotify_session(retries=0)
     response = session.get(SPOTIFY_ME_URL, headers=headers, timeout=(2, 3))
     if response.status_code != 200:
         raise ValueError(f"Spotify profile fetch failed ({response.status_code}): {response.text}")
@@ -106,17 +123,19 @@ def refresh_spotify_tokens(profile) -> str:
     client_id, client_secret, _ = get_spotify_credentials()
     refresh_token = profile.get_refresh_token()
     if not refresh_token:
-        raise ValueError("Profile khong co refresh token hop le.")
+        raise SpotifyAuthError("Profile khong co refresh token hop le.")
 
     headers = get_auth_header(client_id, client_secret)
     data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     }
-    session = get_spotify_session()
+    session = get_spotify_session(retries=1)
     response = session.post(SPOTIFY_TOKEN_URL, data=data, headers=headers, timeout=(10, 20))
+    if response.status_code in (400, 401):
+        raise SpotifyAuthError("Phiên liên kết Spotify đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại Spotify.")
     if response.status_code != 200:
-        raise ValueError(f"Spotify refresh token failed ({response.status_code}): {response.text}")
+        raise ValueError(f"Spotify refresh token failed ({response.status_code})")
 
     token_data = response.json()
     new_access_token = token_data.get("access_token")

@@ -123,6 +123,11 @@ export function useSpotifySync({
           'warning',
           apiErr.message || 'Spotify đang tạm giới hạn tần suất yêu cầu (Rate Limit). Vui lòng thử lại sau.'
         );
+      } else if (apiErr?.status === 503 || apiErr?.status === 504) {
+        addToast(
+          'warning',
+          apiErr.message || 'Kết nối tới Spotify đang tạm thời gián đoạn. Vui lòng thử lại sau ít phút.'
+        );
       } else {
         const msg = err instanceof Error ? err.message : 'Lỗi kết nối';
         addToast('error', `Đồng bộ thất bại: ${msg}`);
