@@ -8,6 +8,7 @@ import logging
 from ai_engine.services.rag.service import get_rag_service
 from ai_engine.services.rag.retrieval.cascade import PipelineMode
 from ai_engine.services.rag.grounding.prompt_builder import ESCAPE_HATCH_PHRASE
+from .security_guard import SECURITY_REFUSAL_MESSAGE, redact_or_block_sensitive_output
 from .schemas import (
     AssistantScopeMeta,
     AssistantTopicItem,
@@ -64,7 +65,8 @@ def _sanitize_answer_for_end_user(answer: str) -> str:
     cleaned = _INTERNAL_PATH_REGEX.sub("tài liệu hệ thống", cleaned)
     cleaned = re.sub(r"[ \t]+\.", ".", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-    return cleaned
+    safe_cleaned, _ = redact_or_block_sensitive_output(cleaned)
+    return safe_cleaned
 
 
 def _maybe_enrich_followup_query(
@@ -162,23 +164,32 @@ def query_website_support(
     raw_citations = list(raw_dump.get("citations") or [])
     raw_verification = dict(raw_dump.get("verification") or {})
     raw_answer = str(raw_dump.get("answer") or "").strip() or ESCAPE_HATCH_PHRASE
+    blocked_by_security = bool(raw_verification.get("blocked_by_security_guard"))
     is_escape_hatch = bool(raw_verification.get("is_escape_hatch")) or (
         ESCAPE_HATCH_PHRASE.lower() in raw_answer.lower()
     )
 
-    topics = [] if is_escape_hatch else _build_topics_from_citations(raw_citations)
     final_answer = raw_answer if is_staff else _sanitize_answer_for_end_user(raw_answer)
-
-    scope_note = (
-        "Không tìm thấy thông tin khớp trong tài liệu sản phẩm."
-        if is_escape_hatch
-        else "Dựa trên tài liệu và hướng dẫn sử dụng chính thức của MusicTrack."
-    )
+    safe_answer, out_blocked = redact_or_block_sensitive_output(final_answer)
+    if blocked_by_security or out_blocked:
+        final_answer = SECURITY_REFUSAL_MESSAGE if blocked_by_security else safe_answer
+        topics = []
+        raw_citations = []
+        scope_label = "Từ chối vì lý do bảo mật"
+        scope_note = "Nội dung bị chặn để bảo vệ an toàn cấu hình hệ thống."
+    else:
+        topics = [] if is_escape_hatch else _build_topics_from_citations(raw_citations)
+        scope_label = "Tài liệu Website MusicTrack"
+        scope_note = (
+            "Không tìm thấy thông tin khớp trong tài liệu sản phẩm."
+            if is_escape_hatch
+            else "Dựa trên tài liệu và hướng dẫn sử dụng chính thức của MusicTrack."
+        )
 
     result = {
         "answer": final_answer,
         "scope": AssistantScopeMeta(
-            label="Tài liệu Website MusicTrack",
+            label=scope_label,
             source="website_docs",
             note=scope_note,
         ),
