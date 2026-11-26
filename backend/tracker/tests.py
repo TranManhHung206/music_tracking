@@ -401,3 +401,101 @@ class Phase1TrackerReliabilityTests(TestCase):
 
         self.assertEqual(res["scrobbled_count"], 0)
 
+
+class ManualSyncErrorHandlingTest(TestCase):
+    """Kiem thu phan loai loi mang/xac thuc Spotify va co che retry an toan khi sync."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from users.services.encryption import encrypt_token
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(username="sync_err_user", password="pass_sync_123")
+        self.profile = SpotifyProfile.objects.create(
+            user=self.user,
+            spotify_id="sp_sync_err",
+            display_name="Sync Err User",
+            encrypted_access_token=encrypt_token("old_acc"),
+            encrypted_refresh_token=encrypt_token("valid_ref"),
+            token_expires_at=timezone.now() + timedelta(hours=1),
+            is_sync_active=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_manual_sync_maps_timeout_and_upstream_and_auth_and_rate_limit(self):
+        import requests
+        from tracker.services.ingestion import SpotifyUpstreamError
+        from users.services.spotify_auth import SpotifyAuthError
+
+        with patch(
+            "tracker.views.sync_user_recently_played_pipeline",
+            side_effect=requests.exceptions.ConnectTimeout("timed out"),
+        ):
+            r_timeout = self.client.post("/api/tracker/sync/")
+        self.assertEqual(r_timeout.status_code, status.HTTP_504_GATEWAY_TIMEOUT)
+        self.assertIn("error", r_timeout.json())
+
+        with patch(
+            "tracker.views.sync_user_recently_played_pipeline",
+            side_effect=requests.exceptions.ConnectionError("reset"),
+        ):
+            r_conn = self.client.post("/api/tracker/sync/")
+        self.assertEqual(r_conn.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        with patch(
+            "tracker.views.sync_user_recently_played_pipeline",
+            side_effect=SpotifyUpstreamError("Spotify 502"),
+        ):
+            r_up = self.client.post("/api/tracker/sync/")
+        self.assertEqual(r_up.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        with patch(
+            "tracker.views.sync_user_recently_played_pipeline",
+            side_effect=SpotifyAuthError("Token het han"),
+        ):
+            r_auth = self.client.post("/api/tracker/sync/")
+        self.assertEqual(r_auth.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        with patch(
+            "tracker.views.sync_user_recently_played_pipeline",
+            side_effect=RuntimeError("SPOTIFY_RATE_LIMIT:120"),
+        ):
+            r_rate = self.client.post("/api/tracker/sync/")
+        self.assertEqual(r_rate.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(r_rate.json()["retry_after_seconds"], 120)
+
+    def test_fetch_recently_played_refreshes_once_on_401(self):
+        from unittest.mock import MagicMock
+        from tracker.services.ingestion import fetch_recently_played_from_api
+
+        resp_401 = MagicMock(status_code=401, headers={}, text="Unauthorized")
+        resp_200 = MagicMock(status_code=200, headers={})
+        resp_200.json.return_value = {"items": [{"id": "ok"}]}
+
+        mock_session = MagicMock()
+        mock_session.get.side_effect = [resp_401, resp_200]
+
+        with patch("tracker.services.ingestion.get_spotify_session", return_value=mock_session), patch(
+            "tracker.services.ingestion.refresh_spotify_tokens", return_value="new_tok"
+        ) as mock_refresh:
+            data = fetch_recently_played_from_api("old_tok", profile=self.profile)
+
+        mock_refresh.assert_called_once_with(self.profile)
+        self.assertEqual(mock_session.get.call_count, 2)
+        self.assertEqual(mock_session.get.call_args_list[1].kwargs["headers"]["Authorization"], "Bearer new_tok")
+        self.assertEqual(data, {"items": [{"id": "ok"}]})
+
+    def test_spotify_session_retry_policy(self):
+        from users.services.spotify_auth import get_spotify_session
+
+        sess_retry = get_spotify_session(retries=1)
+        retry_cfg = sess_retry.get_adapter("https://").max_retries
+        self.assertEqual(retry_cfg.total, 1)
+        self.assertEqual(set(retry_cfg.status_forcelist), {500, 502, 503, 504})
+        self.assertNotIn(429, retry_cfg.status_forcelist)
+
+        sess_no_retry = get_spotify_session(retries=0)
+        no_retry_cfg = sess_no_retry.get_adapter("https://").max_retries
+        self.assertEqual(no_retry_cfg.total, 0)
+

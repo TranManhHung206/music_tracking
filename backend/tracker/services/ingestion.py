@@ -10,10 +10,22 @@ import requests
 from django.utils import timezone
 from django.db import transaction
 
-from users.services.spotify_auth import get_valid_access_token, get_spotify_session
+from users.services.spotify_auth import (
+    SpotifyAuthError,
+    get_spotify_session,
+    get_valid_access_token,
+    refresh_spotify_tokens,
+)
 from tracker.models import Artist, Album, Track, ListeningHistory
 
 logger = logging.getLogger(__name__)
+
+
+class SpotifyUpstreamError(RuntimeError):
+    """Ngoai le khi Spotify Web API tra ve loi he thong 5xx."""
+
+    pass
+
 
 SPOTIFY_RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played"
 SPOTIFY_AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features"
@@ -24,20 +36,30 @@ def parse_iso_datetime(iso_str: str) -> datetime:
     clean_str = iso_str.replace("Z", "+00:00")
     return datetime.fromisoformat(clean_str)
 
-def fetch_recently_played_from_api(access_token: str, after_ms: int = None, limit: int = 50) -> dict:
-    """Goi API Spotify de lay danh sach 50 bai hat vua nghe gan nhat."""
+def fetch_recently_played_from_api(access_token: str, after_ms: int = None, limit: int = 50, profile=None) -> dict:
+    """Goi API Spotify lay 50 bai hat gan nhat; tu dong refresh token 1 lan neu gap HTTP 401."""
     headers = {"Authorization": f"Bearer {access_token}"}
     params = {"limit": min(limit, 50)}
     if after_ms:
         params["after"] = after_ms
 
-    session = get_spotify_session()
+    session = get_spotify_session(retries=1)
     response = session.get(SPOTIFY_RECENTLY_PLAYED_URL, headers=headers, params=params, timeout=(10, 20))
+
+    if response.status_code == 401 and profile is not None:
+        new_token = refresh_spotify_tokens(profile)
+        headers = {"Authorization": f"Bearer {new_token}"}
+        response = session.get(SPOTIFY_RECENTLY_PLAYED_URL, headers=headers, params=params, timeout=(10, 20))
+
     if response.status_code == 429:
         retry_after = response.headers.get("Retry-After", "60")
         raise RuntimeError(f"SPOTIFY_RATE_LIMIT:{retry_after}")
+    if response.status_code == 401:
+        raise SpotifyAuthError("Phiên liên kết Spotify đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại Spotify.")
+    if response.status_code >= 500:
+        raise SpotifyUpstreamError(f"Spotify API tạm thời gặp sự cố ({response.status_code}).")
     if response.status_code != 200:
-        raise ValueError(f"Spotify recently-played request failed ({response.status_code}): {response.text}")
+        raise ValueError(f"Spotify recently-played request failed ({response.status_code})")
 
     return response.json()
 
@@ -386,7 +408,7 @@ def sync_user_recently_played_pipeline(user) -> dict:
     if last_played and last_played >= one_day_ago:
         sync_mode = "from_last_played"
         after_ms = int(last_played.timestamp() * 1000)
-        payload = fetch_recently_played_from_api(access_token, after_ms=after_ms, limit=50)
+        payload = fetch_recently_played_from_api(access_token, after_ms=after_ms, limit=50, profile=profile)
         items = payload.get("items", [])
 
         if items:
@@ -409,15 +431,18 @@ def sync_user_recently_played_pipeline(user) -> dict:
                     logger.debug(f"Gap detection check error: {gap_err}")
         else:
             # Fallback kiem tra 50 bai gan nhat (khong after) de chong lech dong ho may chu
-            fallback_payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50)
+            fallback_payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50, profile=profile)
             fallback_ingest = ingest_recently_played_payload(user, fallback_payload)
             total_scrobbled += fallback_ingest.get("scrobbled_count", 0)
     else:
         # Mac dinh lay 50 bai gan nhat (khi DB chua co hoac ban ghi cuoi da qua 1 ngay)
         sync_mode = "latest_50"
-        payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50)
+        payload = fetch_recently_played_from_api(access_token, after_ms=None, limit=50, profile=profile)
         ingest_res = ingest_recently_played_payload(user, payload)
         total_scrobbled += ingest_res.get("scrobbled_count", 0)
+
+    # Cap nhat lai token neu buoc fetch vua refresh khi gap HTTP 401
+    access_token = profile.get_access_token() or access_token
 
     # Dong bo Audio Features cho cac bai hat chua co features (toi da 100 tracks)
     features_synced_count = sync_audio_features_for_unsynced_tracks(access_token, limit=100)
