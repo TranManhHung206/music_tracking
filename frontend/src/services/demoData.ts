@@ -736,6 +736,44 @@ function buildDemoQuickScopeOptions(
     }));
 }
 
+const DEMO_SECURITY_REFUSAL_MESSAGE =
+  'Yêu cầu này vi phạm chính sách bảo mật của MusicTrack. Mình không thể thực hiện lệnh ghi đè chỉ thị hệ thống hoặc cung cấp tệp cấu hình (.env), khóa bí mật, mã xác thực hay hướng dẫn nội bộ. Bạn có thể hỏi về dữ liệu nghe nhạc cá nhân hoặc cách sử dụng các tính năng trên website.';
+
+function isPromptInjectionOrSecretProbe(query: string, normQuery: string): boolean {
+  const raw = query || '';
+  if (/<\s*\/?\s*(?:memory_ops|music_data|code_context|session_persistent_memory|session_memory|system)\b/i.test(raw)) {
+    return true;
+  }
+  if (
+    /\b(?:ignore|disregard|forget|override|bypass|skip)\s+(?:all\s+|any\s+|every\s+|the\s+)?(?:previous|prior|above|earlier|system|safety|security)\s+(?:instructions?|prompts?|rules?|guidelines?|constraints?|directives?)\b/i.test(
+      normQuery
+    ) ||
+    /\b(?:bo\s+qua|quen\s+het|vo\s+hieu\s+hoa|phot\s+lo|ghi\s+de)\s+(?:tat\s+ca\s+|moi\s+|toan\s+bo\s+)?(?:chi\s+thi|huong\s+dan|quy\s+tac|lenh|rang\s+buoc)\b/i.test(
+      normQuery
+    ) ||
+    /\b(?:jailbreak|dan\s+mode|developer\s+mode|god\s+mode|unrestricted\s+mode)\b/i.test(normQuery)
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:grounding_system_prompt|music_grounding_system_prompt)\b/i.test(normQuery) ||
+    /\b(?:print|show|reveal|display|dump|repeat|output|leak|expose|in\s+ra|hien\s+thi|xuat\s+ra|tiet\s+lo)\b.{0,40}\b(?:system\s+prompt|hidden\s+prompt|developer\s+prompt|prompt\s+he\s+thong|chi\s+thi\s+he\s+thong)\b/i.test(
+      normQuery
+    )
+  ) {
+    return true;
+  }
+  if (
+    /(?<![a-z0-9_])\.env(?:\.[a-z0-9_-]+)?(?![a-z0-9_])/i.test(normQuery) ||
+    /\b(?:print|show|cat|read|dump|reveal|output|display|leak|expose|in\s+ra|doc\s+file|xem\s+file|hien\s+thi|xuat|tiet\s+lo|lay\s+gia\s+tri)\b.{0,35}\b(?:env\s+file|file\s+env|environment\s+variables?|bien\s+moi\s+truong|settings\.py|secret_key|fernet_secret_key|spotify_client_secret|groq_api_key|gemini_api_key|llm_api_key|openai_api_key|database_url|encrypted_access_token|encrypted_refresh_token|api\s*key|client\s*secret|private\s+key)\b/i.test(
+      normQuery
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function buildDemoAssistantReply(
   query: string,
   mode: AssistantMode,
@@ -744,6 +782,34 @@ export function buildDemoAssistantReply(
   priorTurnsCount: number = 0
 ): AssistantQueryResponse {
   const norm = normalizeDemoText(query);
+  if (isPromptInjectionOrSecretProbe(query, norm)) {
+    const blockedDomain = mode === 'music_insights' ? 'music_insights' : 'website_support';
+    return {
+      query,
+      answer: DEMO_SECURITY_REFUSAL_MESSAGE,
+      active_mode: mode,
+      resolved_domain: blockedDomain,
+      needs_clarification: false,
+      clarification_options: [],
+      suggested_scopes: [],
+      scope: {
+        label: 'Từ chối vì lý do bảo mật',
+        source: blockedDomain === 'music_insights' ? 'rolling_window' : 'website_docs',
+        note: 'Yêu cầu bị chặn bởi lớp bảo vệ chống prompt injection và rò rỉ cấu hình.',
+      },
+      evidence: [],
+      topics: [],
+      meta: {
+        provider_used: 'demo_security_guard',
+        model_name: 'prompt_injection_shield',
+        is_fallback: false,
+        tools_used: ['prompt_injection_guard'],
+        session_turns: priorTurnsCount,
+        memory_policy: 'Dữ liệu hội thoại mô phỏng trong Chế độ Xem thử (không gửi lên máy chủ).',
+      },
+    };
+  }
+
   const websiteHints = [
     'chong trung',
     'bao mat',

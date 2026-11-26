@@ -24,6 +24,11 @@ from .vectorstore.bm25_store import BM25Store
 from .retrieval.cascade import RetrievalCascade, PipelineMode
 from .grounding.prompt_builder import GroundingPromptBuilder, ESCAPE_HATCH_PHRASE
 from .grounding.citation_validator import CitationValidator
+from ai_engine.services.security_guard import (
+    SECURITY_REFUSAL_MESSAGE,
+    inspect_user_query_security,
+    redact_or_block_sensitive_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +96,24 @@ class CodebaseRAGService:
     ) -> RAGQueryResponse:
         """Hoi dap thong tin codebase dua tren Thac truy xuat va Grounding."""
         start_time = time.time()
+
+        sec_check = inspect_user_query_security(query_text)
+        if sec_check.blocked:
+            latency = round((time.time() - start_time) * 1000, 2)
+            return RAGQueryResponse(
+                query=query_text,
+                answer=SECURITY_REFUSAL_MESSAGE,
+                citations=[],
+                verification={
+                    "is_escape_hatch": True,
+                    "all_valid": True,
+                    "blocked_by_security_guard": True,
+                    "block_category": sec_check.category,
+                },
+                latency_ms=latency,
+                retrieved_chunks_count=0,
+            )
+
         self.ensure_indexed()
 
         # 1. Kiem tra Redis Cache
@@ -98,8 +121,11 @@ class CodebaseRAGService:
         if use_cache:
             cached_data = cache.get(cache_key)
             if cached_data:
-                cached_data["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-                return RAGQueryResponse(**cached_data)
+                cached_answer = str(cached_data.get("answer") or "")
+                _, cached_blocked = redact_or_block_sensitive_output(cached_answer)
+                if not cached_blocked:
+                    cached_data["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+                    return RAGQueryResponse(**cached_data)
 
         # 2. Thuc thi Thac truy xuat (Retrieval Cascade)
         hits = self.cascade.run(query=query_text, mode=mode, final_k=final_k)
@@ -120,14 +146,31 @@ class CodebaseRAGService:
 
         # 4. Goi LLM sinh cau tra loi bám nguồn
         raw_answer = self._generate_answer(messages)
+        safe_answer, output_blocked = redact_or_block_sensitive_output(raw_answer)
+
+        if output_blocked:
+            latency = round((time.time() - start_time) * 1000, 2)
+            return RAGQueryResponse(
+                query=query_text,
+                answer=safe_answer,
+                citations=[],
+                verification={
+                    "is_escape_hatch": True,
+                    "all_valid": True,
+                    "blocked_by_security_guard": True,
+                    "block_category": "output_sensitive_leak",
+                },
+                latency_ms=latency,
+                retrieved_chunks_count=len(hits),
+            )
 
         # 5. Kiem dinh trich dan nguon
-        citations, verification_metrics = self.citation_validator.validate(raw_answer, hits)
+        citations, verification_metrics = self.citation_validator.validate(safe_answer, hits)
 
         latency = round((time.time() - start_time) * 1000, 2)
         response = RAGQueryResponse(
             query=query_text,
-            answer=raw_answer,
+            answer=safe_answer,
             citations=citations,
             verification=verification_metrics,
             latency_ms=latency,

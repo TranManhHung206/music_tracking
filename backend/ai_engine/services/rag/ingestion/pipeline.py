@@ -8,6 +8,7 @@ from ..schemas import CodeChunk
 from .python_chunker import PythonASTChunker
 from .doc_chunker import MarkdownDocChunker
 from ..config import get_rag_config
+from ai_engine.services.security_guard import contains_sensitive_leak
 
 EXCLUDED_DIR_NAMES = {
     "__pycache__",
@@ -62,14 +63,14 @@ class IngestionPipeline:
                         rel_path = file_path.relative_to(self.workspace_root).as_posix()
                         app_name = self._detect_app_name(rel_path)
                         chunks = self.py_chunker.chunk_file(file_path, rel_path, app_name)
-                        all_chunks.extend(chunks)
+                        all_chunks.extend(c for c in chunks if not self._is_sensitive_doc_chunk(c))
 
         # 2. Quet duy nhat tai lieu cong khai chinh thuc: README.md
         readme_path = self.workspace_root / "README.md"
         if readme_path.exists():
             rel_path = readme_path.relative_to(self.workspace_root).as_posix()
             chunks = self.doc_chunker.chunk_file(readme_path, rel_path)
-            all_chunks.extend(chunks)
+            all_chunks.extend(c for c in chunks if not self._is_sensitive_doc_chunk(c))
 
         return all_chunks
 
@@ -87,11 +88,33 @@ class IngestionPipeline:
 
         if suffix == ".py":
             app_name = self._detect_app_name(rel_path)
-            return self.py_chunker.chunk_file(file_path, rel_path, app_name)
+            raw_chunks = self.py_chunker.chunk_file(file_path, rel_path, app_name)
+            return [c for c in raw_chunks if not self._is_sensitive_doc_chunk(c)]
         elif suffix in [".md", ".markdown"]:
-            return self.doc_chunker.chunk_file(file_path, rel_path)
+            raw_chunks = self.doc_chunker.chunk_file(file_path, rel_path)
+            return [c for c in raw_chunks if not self._is_sensitive_doc_chunk(c)]
 
         return []
+
+    def _is_sensitive_doc_chunk(self, chunk: CodeChunk) -> bool:
+        """Loai bo chunk chua mau .env cai dat dev hoac system prompt noi bo khoi chi muc RAG."""
+        rel_path = chunk.metadata.path.replace("\\", "/")
+        heading_lower = (chunk.metadata.heading_path or "").lower()
+        text = chunk.text or ""
+
+        if rel_path.endswith("assistant/security_guard.py") or rel_path.endswith("services/security_guard.py"):
+            return True
+
+        if rel_path == "README.md":
+            if contains_sensitive_leak(text):
+                return True
+            if "cấu hình biến môi trường" in heading_lower or ".env" in text.lower():
+                return True
+
+        if contains_sensitive_leak(text):
+            return True
+
+        return False
 
     def _detect_app_name(self, rel_path: str) -> str | None:
         """Trich xuat ten Django app tu duong dan tuong doi."""
